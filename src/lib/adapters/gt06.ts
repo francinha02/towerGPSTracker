@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
 import { filter } from 'mcc-mnc-list'
 import { Alarm, Control, Course, Format, GPS, Parts } from '../models/gt06'
-import * as f from '../functions'
+import * as f from '../functions/functions'
 import Device from '../device'
 import crc16 from '../functions/crc16'
 
@@ -21,7 +21,7 @@ class Adapter {
   }
 
   parseData (data: string | Parts | Buffer) {
-    data = this.bufferToHexString(data)
+    data = f.bufferToHexString(data)
 
     const parts: Parts = {
       start: data.substr(0, 4),
@@ -68,20 +68,9 @@ class Adapter {
     return parts
   }
 
-  bufferToHexString (buffer: string | Buffer | Parts) {
-    let str = ''
-    for (let i = 0; i < buffer.length; i++) {
-      if (buffer[i] < 16) {
-        str += '0'
-      }
-      str += buffer[i].toString(16)
-    }
-    return str
-  }
-
-  authorize () {
+  authorize (protocol: string) {
     const length = '05'
-    const protocolID = '01'
+    const protocolID = protocol
     const serial = f.strPad(this.__count, 4, '0')
 
     const str = length + protocolID + serial
@@ -94,20 +83,16 @@ class Adapter {
     return buffer
   }
 
-  zeroPad (nNum: number, nPad: number) {
-    return ('' + (Math.pow(10, nPad) + nNum)).slice(1)
-  }
-
   synchronousClock () {
     const date = new Date()
 
     const str = (date.getFullYear().toString().substr(2, 2)) +
-      (this.zeroPad(date.getMonth() + 1, 2).toString()) +
-      (this.zeroPad(date.getDate(), 2).toString()) +
-      (this.zeroPad(date.getHours(), 2).toString()) +
-      (this.zeroPad(date.getMinutes(), 2).toString()) +
-      (this.zeroPad(date.getSeconds(), 2).toString()) +
-      (this.zeroPad(this.__count, 4).toString())
+      (f.zeroPad(date.getMonth() + 1, 2).toString()) +
+      (f.zeroPad(date.getDate(), 2).toString()) +
+      (f.zeroPad(date.getHours(), 2).toString()) +
+      (f.zeroPad(date.getMinutes(), 2).toString()) +
+      (f.zeroPad(date.getSeconds(), 2).toString()) +
+      (f.zeroPad(this.__count, 4).toString())
 
     this.__count++
 
@@ -136,8 +121,8 @@ class Adapter {
       setCount: str.substr(12, 2), // Length of GPS information, quantity of positioning satellites
       latitudeRaw: str.substr(14, 8),
       longitudeRaw: str.substr(22, 8),
-      latitude: this.dexToDegrees(str.substr(14, 8)),
-      longitude: this.dexToDegrees(str.substr(22, 8)),
+      latitude: f.dexToDegrees(str.substr(14, 8)),
+      longitude: f.dexToDegrees(str.substr(22, 8)),
       speed: parseInt(str.substr(30, 2), 16),
       orientation: this.getCourseStatus(f.strPad(parseInt(str.substr(32, 4), 16).toString(2), 8, '0')),
       lbs: str.substr(36, 18),
@@ -189,7 +174,6 @@ class Adapter {
         break
     }
 
-    console.log('Receive Alarm: ', data)
     return data
   }
 
@@ -266,18 +250,14 @@ class Adapter {
     return data
   }
 
-  dexToDegrees (dex: string) {
-    return parseInt(dex, 16) / 1800000
-  }
-
   getPingData (msgParts: Parts) {
     const str: string = msgParts.data
 
     const data: GPS = {
       dateTime: this.parseDateTime(str, 'America/Sao_Paulo'),
       gpsInformation: str.substr(12, 2),
-      latitude: this.dexToDegrees(str.substr(14, 8)),
-      longitude: this.dexToDegrees(str.substr(22, 8)),
+      latitude: f.dexToDegrees(str.substr(14, 8)),
+      longitude: f.dexToDegrees(str.substr(22, 8)),
       speed: parseInt(str.substr(30, 2), 16),
       courseStatus: this.getCourseStatus(parseInt(str.substr(32, 4), 16).toString(2)),
       mcc: parseInt(str.substr(36, 4), 16).toString(),

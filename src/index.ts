@@ -19,6 +19,7 @@ const serverGT06 = new Server(options, (device, connection) => {
 
   device.on(Control.alert, (deviceInfo: TerminalInformation, power: string, gsm: string, language: LanguagePack, msgParts: Parts) => {
     console.log(deviceInfo, power, gsm, language, msgParts)
+    device.responseAlarm(true)
   })
 })
 

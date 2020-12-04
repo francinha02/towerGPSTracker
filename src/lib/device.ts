@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { AddressInfo, Socket } from 'net'
 import { Adapter } from './adapters/gt06'
 import { Control, Parts } from './models/gt06'
+import * as f from './functions/functions'
 
 export default class Device extends EventEmitter {
   private connection: Socket
@@ -92,7 +93,14 @@ export default class Device extends EventEmitter {
     if (val) {
       this.doLog(`Device ${this.getUID()} has been authorized. Welcome!\r\n`)
       this.logged = true
-      const send = this.adapter.authorize()
+      const send = this.adapter.authorize('01')
+      this.send(send)
+    }
+  }
+
+  responseAlarm (val: boolean) {
+    if (val) {
+      const send = this.adapter.authorize('16')
       this.send(send)
     }
   }
@@ -158,7 +166,7 @@ export default class Device extends EventEmitter {
 
   send (msg: Buffer | string) {
     this.emit('Send data', msg)
-    const data = this.adapter.bufferToHexString(msg)
+    const data = f.bufferToHexString(msg)
     this.doLog(`Sending to ${this.getUID()}: ${data}\r\n`)
     this.connection.write(msg, (err) => {
       if (err) console.log('Error sending: ', err)
