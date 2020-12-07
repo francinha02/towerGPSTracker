@@ -76,6 +76,9 @@ export default class Device extends EventEmitter {
       case Control.alert:
         this.receiveAlarm(msgParts)
         break
+      case Control.heartbeat:
+        this.receiveHeartbeat(msgParts)
+        break
       case Control.noop:
         this.adapter.runOther(msgParts.cmd, msgParts)
         break
@@ -98,9 +101,9 @@ export default class Device extends EventEmitter {
     }
   }
 
-  responseAlarm (val: boolean) {
+  responsePacket (val: boolean, protocol: string) {
     if (val) {
-      const send = this.adapter.authorize('16')
+      const send = this.adapter.authorize(protocol)
       this.send(send)
     }
   }
@@ -150,6 +153,17 @@ export default class Device extends EventEmitter {
     */
     this.doLog(`${alarmData.deviceInfo.alarm} alarm received. Battery is ${alarmData.power}. GSM with ${alarmData.gsm}.`)
     this.emit(Control.alert, alarmData.deviceInfo, alarmData.power, alarmData.gsm, alarmData.alarmLang, msgParts)
+  }
+
+  receiveHeartbeat (msgParts: Parts) {
+    const heart = this.adapter.receiveHeartbeat(msgParts)
+
+    if (!heart) {
+      // Something bad happened
+      this.doLog('Heartbeat Data can\'t be parsed. Discarding packet...\r\n')
+      return false
+    }
+    this.emit(Control.heartbeat, heart)
   }
 
   /****************************************

@@ -54,6 +54,7 @@ class Adapter {
         parts.cmd = Control.ping
         parts.action = Control.ping
       } else if (parts.protocolID === '13') { // Status information
+        parts.data = data.substr(8, parts.length * 2 + 2)
         parts.cmd = Control.heartbeat
         parts.action = Control.heartbeat
       } else if (parts.protocolID === '16' || parts.protocolID === '18') { // Alarm data
@@ -65,6 +66,7 @@ class Adapter {
         parts.action = Control.noop
       }
     }
+
     return parts
   }
 
@@ -127,51 +129,9 @@ class Adapter {
       orientation: this.getCourseStatus(f.strPad(parseInt(str.substr(32, 4), 16).toString(2), 8, '0')),
       lbs: str.substr(36, 18),
       deviceInfo: this.getDeviceInfo(f.strPad(parseInt(str.substr(54, 2), 16).toString(2), 8, '0')),
-      power: str.substr(56, 2),
-      gsm: str.substr(58, 2),
+      power: this.getVoltageInfo(str.substr(56, 2)),
+      gsm: this.getGSMInfo(str.substr(58, 2)),
       alarmLang: this.getAlarmLanguage(str.substr(60, 2), str.substr(62, 2))
-    }
-
-    switch (data.power) {
-      case '00':
-        data.power = 'No Power (shutdown)'
-        break
-      case '01':
-        data.power = 'Extremely Low Battery'
-        break
-      case '02':
-        data.power = 'Very Low Battery'
-        break
-      case '03':
-        data.power = 'Low Battery'
-        break
-      case '04':
-        data.power = 'Medium'
-        break
-      case '05':
-        data.power = 'High'
-        break
-      case '06':
-        data.power = 'Very High'
-        break
-    }
-
-    switch (data.gsm) {
-      case '00':
-        data.gsm = 'No Signal'
-        break
-      case '01':
-        data.gsm = 'Extremely Weak Signal'
-        break
-      case '02':
-        data.gsm = 'Very Weak Signal'
-        break
-      case '03':
-        data.gsm = 'Good Signal'
-        break
-      case '04':
-        data.gsm = 'Strong Signal'
-        break
     }
 
     return data
@@ -250,6 +210,55 @@ class Adapter {
     return data
   }
 
+  getVoltageInfo (power: string) {
+    switch (power) {
+      case '00':
+        power = 'No Power (shutdown)'
+        break
+      case '01':
+        power = 'Extremely Low Battery'
+        break
+      case '02':
+        power = 'Very Low Battery'
+        break
+      case '03':
+        power = 'Low Battery'
+        break
+      case '04':
+        power = 'Medium'
+        break
+      case '05':
+        power = 'High'
+        break
+      case '06':
+        power = 'Very High'
+        break
+    }
+
+    return power
+  }
+
+  getGSMInfo (gsm: string) {
+    switch (gsm) {
+      case '00':
+        gsm = 'No Signal'
+        break
+      case '01':
+        gsm = 'Extremely Weak Signal'
+        break
+      case '02':
+        gsm = 'Very Weak Signal'
+        break
+      case '03':
+        gsm = 'Good Signal'
+        break
+      case '04':
+        gsm = 'Strong Signal'
+        break
+    }
+    return gsm
+  }
+
   getPingData (msgParts: Parts) {
     const str: string = msgParts.data
 
@@ -273,7 +282,7 @@ class Adapter {
     if (data.courseStatus.longitudePosition === Course.West) {
       data.longitude = data.longitude * (-1)
     }
-    console.log(data)
+
     return data
   }
 
@@ -304,6 +313,19 @@ class Adapter {
     }
 
     return d.toString()
+  }
+
+  receiveHeartbeat (msgParts: Parts) {
+    const str = msgParts.data
+
+    const data = {
+      deviceInfo: this.getDeviceInfo(f.strPad(parseInt(str.substr(0, 2), 16).toString(2), 8, '0')),
+      power: this.getVoltageInfo(str.substr(2, 2)),
+      gsm: this.getGSMInfo(str.substr(4, 2)),
+      alarmLang: this.getAlarmLanguage(str.substr(6, 2), str.substr(8, 2))
+    }
+
+    return data
   }
 
   setRefreshTime (interval, duration) { }

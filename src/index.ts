@@ -18,8 +18,13 @@ const serverGT06 = new Server(options, (device, connection) => {
   })
 
   device.on(Control.alert, (deviceInfo: TerminalInformation, power: string, gsm: string, language: LanguagePack, msgParts: Parts) => {
-    console.log(deviceInfo, power, gsm, language, msgParts)
-    device.responseAlarm(true)
+    console.log(deviceInfo, power, gsm, language)
+    device.responsePacket(true, '16')
+  })
+
+  device.on(Control.heartbeat, (heart) => {
+    console.log(heart)
+    device.responsePacket(true, '13')
   })
 })
 
