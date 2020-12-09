@@ -2,7 +2,7 @@
 export interface Format {
   start: string,
   end: string,
-  separator: string
+  separator: string,
 }
 
 export interface Parts {
@@ -16,7 +16,7 @@ export interface Parts {
   cmd: string,
   action: string,
   count: string,
-  finish: string
+  finish: string,
 }
 
 export interface CourseStatus {
@@ -24,12 +24,12 @@ export interface CourseStatus {
   positioned: number,
   longitudePosition: number,
   latitudePosition: number,
-  course: number
+  course: number,
 }
 
 export interface LanguagePack {
   formerBit: string,
-  latterBit: string
+  latterBit: string,
 }
 
 export interface TerminalInformation {
@@ -38,7 +38,7 @@ export interface TerminalInformation {
   alarm: string,
   charge: string,
   acc: string,
-  activated: string
+  activated: string,
 }
 
 export interface GPS {
@@ -52,7 +52,7 @@ export interface GPS {
   mnc: string,
   network: string,
   lac: string,
-  cellID: string
+  cellID: string,
 }
 
 export interface Alarm {
@@ -68,6 +68,13 @@ export interface Alarm {
   deviceInfo: TerminalInformation,
   power: string,
   gsm: string,
+  alarmLang: LanguagePack,
+}
+
+export interface Heartbeat {
+  deviceInfo: TerminalInformation,
+  power: string,
+  gsm: string,
   alarmLang: LanguagePack
 }
 
@@ -77,12 +84,13 @@ export enum Control {
   noop = 'noop',
   clock = 'clock',
   heartbeat = 'heartbeat',
-  alert = 'alert'
+  alert = 'alert',
+  replied = 'replied',
 }
 
 export enum Course {
   East = 0,
   West = 1,
   South = 0,
-  North = 1
+  North = 1,
 }

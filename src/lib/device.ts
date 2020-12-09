@@ -8,10 +8,10 @@ export default class Device extends EventEmitter {
   private connection: Socket
   private server
   private adapter: Adapter
-  private uid: string
+  uid: string
   ip: string
   port: number
-  private name
+  private name: string | boolean
   private logged: boolean
 
   constructor (adapter: Adapter, connection: Socket, gpsServer) {
@@ -33,17 +33,23 @@ export default class Device extends EventEmitter {
     this.on('data', (data) => {
       const msgParts = this.adapter.parseData(data)
 
-      if (!this.getUID() && typeof (msgParts.deviceID) === 'undefined') {
-        this.doLog('The adapter doesn\'t return the deviceID and is not defined\r\n')
+      if (!this.getUID() && typeof msgParts.deviceID === 'undefined') {
+        this.doLog(
+          "The adapter doesn't return the deviceID and is not defined\r\n"
+        )
       }
 
       if (!msgParts) {
-        this.doLog(`The message ('${data}' can't be parsed. Discarding...)\r\n`)
+        this.doLog(
+          `The message ('${data}' can't be parsed. Discarding...)\r\n`
+        )
         return
       }
 
-      if (typeof (msgParts.cmd) === 'undefined') {
-        this.doLog('The adapter doesn\'t return the command (cmd) parameter\r\n')
+      if (typeof msgParts.cmd === 'undefined') {
+        this.doLog(
+          "The adapter doesn't return the command (cmd) parameter\r\n"
+        )
       }
 
       // If the UID of the devices it hasn't been configured, do it now.
@@ -58,11 +64,13 @@ export default class Device extends EventEmitter {
     })
   }
 
-  makeAction (action: string, msgParts: Parts) {
+  private makeAction (action: string, msgParts: Parts) {
     // If we're not logged
     if (action !== Control.loginRequest && !this.logged) {
       this.adapter.requestLoginToDevice()
-      this.doLog(`${this.getUID()} is trying to '${action}' but it isn't logged. Action wasn't executed\r\n`)
+      this.doLog(
+        `${this.getUID()} is trying to '${action}' but it isn't logged. Action wasn't executed\r\n`
+      )
       return false
     }
 
@@ -88,11 +96,11 @@ export default class Device extends EventEmitter {
   /****************************************
   LOGIN & LOGOUT
   ****************************************/
-  loginRequest (msgParts: Parts) {
+  private loginRequest (msgParts: Parts): void {
     this.emit(Control.loginRequest, this.getUID(), msgParts)
   }
 
-  loginAuthorized (val: boolean, msgParts: Parts) {
+  loginAuthorized (val: boolean, msgParts: Parts): void {
     if (val) {
       this.doLog(`Device ${this.getUID()} has been authorized. Welcome!\r\n`)
       this.logged = true
@@ -101,15 +109,20 @@ export default class Device extends EventEmitter {
     }
   }
 
-  responsePacket (val: boolean, protocol: string) {
+  responsePacket (val: boolean, protocol: string): void {
     if (val) {
       const send = this.adapter.authorize(protocol)
       this.send(send)
     }
   }
 
+  sendCommand (msg: Buffer, type: boolean): Buffer {
+    const command = this.adapter.command(msg, type)
+    return command
+  }
+
   // TODO implement this
-  logout () {
+  logout (): void {
     this.logged = false
     // this.adapter.logout()
   }
@@ -117,11 +130,11 @@ export default class Device extends EventEmitter {
   /****************************************
   RECEIVING GPS POSITION FROM THE DEVICE
   ****************************************/
-  ping (msgParts: Parts) {
+  private ping (msgParts: Parts): boolean {
     const gpsData = this.adapter.getPingData(msgParts)
     if (!gpsData) {
       // Something bad happened
-      this.doLog('GPS Data can\'t be parsed. Discarding packet...\r\n')
+      this.doLog("GPS Data can't be parsed. Discarding packet...\r\n")
       return false
     }
 
@@ -130,37 +143,54 @@ export default class Device extends EventEmitter {
       Optionals:
       orientation, speed, mileage, etc */
 
-    this.doLog(`Position received ('${gpsData.latitude}', '${gpsData.longitude}')\r\n`)
-    Object.defineProperty(gpsData, 'fromCMD', { enumerable: true, value: msgParts.cmd })
+    this.doLog(
+      `Position received ('${gpsData.latitude}', '${gpsData.longitude}')\r\n`
+    )
+    Object.defineProperty(gpsData, 'fromCMD', {
+      enumerable: true,
+      value: msgParts.cmd
+    })
     this.emit(Control.ping, gpsData, msgParts)
   }
 
   /****************************************
   RECEIVING ALARM
   *****************************************/
-  receiveAlarm (msgParts: Parts) {
+  private receiveAlarm (msgParts: Parts): boolean {
     // We pass the message parts to the adapter and they have to say with type of alarm it is.
     const alarmData = this.adapter.receiveAlarm(msgParts)
 
     if (!alarmData) {
       // Something bad happened
-      this.doLog('GPS Alarm Data can\'t be parsed. Discarding packet...\r\n')
+      this.doLog("GPS Alarm Data can't be parsed. Discarding packet...\r\n")
       return false
     }
     /* Alarm data must return an object with at least:
     alarm_type: object with this format:
     {'code':'sos_alarm','msg':'SOS Alarm activated by the driver'}
     */
-    this.doLog(`${alarmData.deviceInfo.alarm} alarm received. Battery is ${alarmData.power}. GSM with ${alarmData.gsm}.`)
-    this.emit(Control.alert, alarmData.deviceInfo, alarmData.power, alarmData.gsm, alarmData.alarmLang, msgParts)
+    this.doLog(
+      `${alarmData.deviceInfo.alarm} alarm received. Battery is ${alarmData.power}. GSM with ${alarmData.gsm}.`
+    )
+    this.emit(
+      Control.alert,
+      alarmData.deviceInfo,
+      alarmData.power,
+      alarmData.gsm,
+      alarmData.alarmLang,
+      msgParts
+    )
   }
 
-  receiveHeartbeat (msgParts: Parts) {
+  /****************************************
+  RECEIVING HEARTBEAT
+  *****************************************/
+  private receiveHeartbeat (msgParts: Parts): boolean {
     const heart = this.adapter.receiveHeartbeat(msgParts)
 
     if (!heart) {
       // Something bad happened
-      this.doLog('Heartbeat Data can\'t be parsed. Discarding packet...\r\n')
+      this.doLog("Heartbeat Data can't be parsed. Discarding packet...\r\n")
       return false
     }
     this.emit(Control.heartbeat, heart)
@@ -169,16 +199,16 @@ export default class Device extends EventEmitter {
   /****************************************
   SET REFRESH TIME
   ****************************************/
-  setRefreshTime (interval, duration) {
-    this.adapter.setRefreshTime(interval, duration)
-  }
+  // setRefreshTime (interval: number, duration: number) {
+  //   this.adapter.setRefreshTime(interval, duration)
+  // }
 
   /* adding methods to the adapter */
-  getDevice () {
+  getDevice (): typeof Device {
     return Device
   }
 
-  send (msg: Buffer | string) {
+  send (msg: Buffer | string): void {
     this.emit('Send data', msg)
     const data = f.bufferToHexString(msg)
     this.doLog(`Sending to ${this.getUID()}: ${data}\r\n`)
@@ -187,26 +217,26 @@ export default class Device extends EventEmitter {
     })
   }
 
-  doLog (msg: string) {
+  doLog (msg: string): void {
     this.server.doLog(msg, this.getUID())
   }
 
   /****************************************
   SOME SETTERS & GETTERS
   ****************************************/
-  getName () {
+  getName (): string | boolean {
     return this.name
   }
 
-  setName (name) {
+  private setName (name) {
     this.name = name
   }
 
-  getUID () {
+  getUID (): string {
     return this.uid
   }
 
-  setUID (uid) {
+  private setUID (uid: string) {
     this.uid = uid
   }
 }

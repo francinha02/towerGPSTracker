@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon'
 import { filter } from 'mcc-mnc-list'
-import { Alarm, Control, Course, Format, GPS, Parts } from '../models/gt06'
+import { Alarm, Control, Course, CourseStatus, Format, GPS, Heartbeat, LanguagePack, Parts, TerminalInformation } from '../models/gt06'
 import * as f from '../functions/functions'
 import Device from '../device'
 import crc16 from '../functions/crc16'
@@ -10,9 +10,9 @@ const modelName = 'GT06'
 const compatibleHardware = ['GT06/supplier']
 
 class Adapter {
-  private format: Format
-  private device: Device
-  private __count
+  private format: Format;
+  private device: Device;
+  private __count;
 
   constructor (device: Device) {
     this.format = { start: '(', end: ')', separator: '' }
@@ -20,7 +20,7 @@ class Adapter {
     this.__count = 1
   }
 
-  parseData (data: string | Parts | Buffer) {
+  parseData (data: string | Parts | Buffer): Parts {
     data = f.bufferToHexString(data)
 
     const parts: Parts = {
@@ -45,22 +45,30 @@ class Adapter {
       if (parts.finish !== '0d0a') {
         console.error('Finish code incorrect')
       }
-      if (parts.protocolID === '01') { // Login Message
+      if (parts.protocolID === '01') {
+        // Login Message
         parts.deviceID = data.substr(8, 16)
         parts.cmd = Control.loginRequest
         parts.action = Control.loginRequest
-      } else if (parts.protocolID === '12') { // Location Data
+      } else if (parts.protocolID === '12') {
+        // Location Data
         parts.data = data.substr(8, parts.length * 2 + 2)
         parts.cmd = Control.ping
         parts.action = Control.ping
-      } else if (parts.protocolID === '13') { // Status information
+      } else if (parts.protocolID === '13') {
+        // Status information
         parts.data = data.substr(8, parts.length * 2 + 2)
         parts.cmd = Control.heartbeat
         parts.action = Control.heartbeat
-      } else if (parts.protocolID === '16' || parts.protocolID === '18') { // Alarm data
+      } else if (parts.protocolID === '16' || parts.protocolID === '18') {
+        // Alarm data
         parts.data = data.substr(8, parts.length * 2 + 2)
         parts.cmd = Control.alert
         parts.action = Control.alert
+      } else if (parts.protocolID === '15') {
+        parts.data = data.substring(8, parts.length * 2 + 2)
+        parts.cmd = Control.noop
+        parts.action = Control.noop
       } else {
         parts.cmd = Control.noop
         parts.action = Control.noop
@@ -70,7 +78,7 @@ class Adapter {
     return parts
   }
 
-  authorize (protocol: string) {
+  authorize (protocol: string): Buffer {
     const length = '05'
     const protocolID = protocol
     const serial = f.strPad(this.__count, 4, '0')
@@ -80,21 +88,25 @@ class Adapter {
     this.__count++
 
     const errorCheck = f.strPad(crc16(str).toString(16), 4, '0')
-    const buffer: Buffer = Buffer.from('7878' + str + errorCheck + '0d0a', 'hex')
+    const buffer: Buffer = Buffer.from(
+      '7878' + str + errorCheck + '0d0a',
+      'hex'
+    )
 
     return buffer
   }
 
-  synchronousClock () {
+  synchronousClock (): void {
     const date = new Date()
 
-    const str = (date.getFullYear().toString().substr(2, 2)) +
-      (f.zeroPad(date.getMonth() + 1, 2).toString()) +
-      (f.zeroPad(date.getDate(), 2).toString()) +
-      (f.zeroPad(date.getHours(), 2).toString()) +
-      (f.zeroPad(date.getMinutes(), 2).toString()) +
-      (f.zeroPad(date.getSeconds(), 2).toString()) +
-      (f.zeroPad(this.__count, 4).toString())
+    const str =
+      date.getFullYear().toString().substr(2, 2) +
+      f.zeroPad(date.getMonth() + 1, 2).toString() +
+      f.zeroPad(date.getDate(), 2).toString() +
+      f.zeroPad(date.getHours(), 2).toString() +
+      f.zeroPad(date.getMinutes(), 2).toString() +
+      f.zeroPad(date.getSeconds(), 2).toString() +
+      f.zeroPad(this.__count, 4).toString()
 
     this.__count++
 
@@ -103,19 +115,15 @@ class Adapter {
     this.sendCommand(buffer)
   }
 
-  runOther (cmd: string, msgParts) {
-    // switch (cmd) {
-    //   case 'BP00':
-    //     this.device.send(this.formatData(this.device.getUID() + 'AP01HSO'))
-    //     break
-    // }
+  runOther (cmd: string, msgParts: Parts): void {
+    console.log(cmd, msgParts)
   }
 
-  requestLoginToDevice () {
+  requestLoginToDevice (): void {
     // TODO: Implement this
   }
 
-  receiveAlarm (msgParts: Parts) {
+  receiveAlarm (msgParts: Parts): Alarm {
     const str = msgParts.data
 
     const data: Alarm = {
@@ -126,9 +134,13 @@ class Adapter {
       latitude: f.dexToDegrees(str.substr(14, 8)),
       longitude: f.dexToDegrees(str.substr(22, 8)),
       speed: parseInt(str.substr(30, 2), 16),
-      orientation: this.getCourseStatus(f.strPad(parseInt(str.substr(32, 4), 16).toString(2), 8, '0')),
+      orientation: this.getCourseStatus(
+        f.strPad(parseInt(str.substr(32, 4), 16).toString(2), 8, '0')
+      ),
       lbs: str.substr(36, 18),
-      deviceInfo: this.getDeviceInfo(f.strPad(parseInt(str.substr(54, 2), 16).toString(2), 8, '0')),
+      deviceInfo: this.getDeviceInfo(
+        f.strPad(parseInt(str.substr(54, 2), 16).toString(2), 8, '0')
+      ),
       power: this.getVoltageInfo(str.substr(56, 2)),
       gsm: this.getGSMInfo(str.substr(58, 2)),
       alarmLang: this.getAlarmLanguage(str.substr(60, 2), str.substr(62, 2))
@@ -137,7 +149,7 @@ class Adapter {
     return data
   }
 
-  getAlarmLanguage (formerBit: string, latterBit: string) {
+  getAlarmLanguage (formerBit: string, latterBit: string): LanguagePack {
     const data = {
       formerBit: '',
       latterBit: ''
@@ -175,7 +187,7 @@ class Adapter {
     return data
   }
 
-  getDeviceInfo (info: string) {
+  getDeviceInfo (info: string): TerminalInformation {
     /**
      * Gets the binary string number and parse data to define status information of the mobile phone
      * @param info The binary value of status information. The index of the first character in the string is zero.
@@ -210,7 +222,7 @@ class Adapter {
     return data
   }
 
-  getVoltageInfo (power: string) {
+  getVoltageInfo (power: string): string {
     switch (power) {
       case '00':
         power = 'No Power (shutdown)'
@@ -238,7 +250,7 @@ class Adapter {
     return power
   }
 
-  getGSMInfo (gsm: string) {
+  getGSMInfo (gsm: string): string {
     switch (gsm) {
       case '00':
         gsm = 'No Signal'
@@ -259,7 +271,7 @@ class Adapter {
     return gsm
   }
 
-  getPingData (msgParts: Parts) {
+  getPingData (msgParts: Parts): GPS {
     const str: string = msgParts.data
 
     const data: GPS = {
@@ -268,25 +280,30 @@ class Adapter {
       latitude: f.dexToDegrees(str.substr(14, 8)),
       longitude: f.dexToDegrees(str.substr(22, 8)),
       speed: parseInt(str.substr(30, 2), 16),
-      courseStatus: this.getCourseStatus(parseInt(str.substr(32, 4), 16).toString(2)),
+      courseStatus: this.getCourseStatus(
+        parseInt(str.substr(32, 4), 16).toString(2)
+      ),
       mcc: parseInt(str.substr(36, 4), 16).toString(),
       mnc: f.strPad(parseInt(str.substr(40, 2), 16).toString(), 2, '0'),
-      network: filter({ mcc: `${parseInt(str.substr(36, 4), 16)}`, mnc: `${f.strPad(parseInt(str.substr(40, 2), 16).toString(), 2, '0')}` })[0].brand,
+      network: filter({
+        mcc: `${parseInt(str.substr(36, 4), 16)}`,
+        mnc: `${f.strPad(parseInt(str.substr(40, 2), 16).toString(), 2, '0')}`
+      })[0].brand,
       lac: str.substr(42, 4),
       cellID: str.substr(46, 6)
     }
 
     if (data.courseStatus.latitudePosition === Course.South) {
-      data.latitude = data.latitude * (-1)
+      data.latitude = data.latitude * -1
     }
     if (data.courseStatus.longitudePosition === Course.West) {
-      data.longitude = data.longitude * (-1)
+      data.longitude = data.longitude * -1
     }
 
     return data
   }
 
-  getCourseStatus (courseStatus: string) {
+  getCourseStatus (courseStatus: string): CourseStatus {
     const result = {
       realTime: parseInt(courseStatus.substr(2, 1)),
       positioned: parseInt(courseStatus.substr(3, 1)),
@@ -297,17 +314,24 @@ class Adapter {
     return result
   }
 
-  parseDateTime (data: string, locale?: string) {
+  private parseDateTime (data: string, locale?: string): string {
     const str: string = data
 
     const year = parseInt(str.substr(0, 2), 16) + 2000
-    const month = f.strPad((parseInt(str.substr(2, 2), 16)).toString(), 2, '0')
+    const month = f.strPad(parseInt(str.substr(2, 2), 16).toString(), 2, '0')
     const day = f.strPad(parseInt(str.substr(4, 2), 16).toString(), 2, '0')
     const hour = f.strPad(parseInt(str.substr(6, 2), 16).toString(), 2, '0')
     const minutes = f.strPad(parseInt(str.substr(8, 2), 16).toString(), 2, '0')
-    const seconds = f.strPad(parseInt(str.substr(10, 2), 16).toString(), 2, '0')
+    const seconds = f.strPad(
+      parseInt(str.substr(10, 2), 16).toString(),
+      2,
+      '0'
+    )
 
-    let d: DateTime = DateTime.fromISO(`${year}-${month}-${day}T${hour}:${minutes}:${seconds}`, { zone: 'Asia/Shanghai' })
+    let d: DateTime = DateTime.fromISO(
+      `${year}-${month}-${day}T${hour}:${minutes}:${seconds}`,
+      { zone: 'Asia/Shanghai' }
+    )
     if (locale) {
       d = d.setZone(locale)
     }
@@ -315,11 +339,13 @@ class Adapter {
     return d.toString()
   }
 
-  receiveHeartbeat (msgParts: Parts) {
+  receiveHeartbeat (msgParts: Parts): Heartbeat {
     const str = msgParts.data
 
     const data = {
-      deviceInfo: this.getDeviceInfo(f.strPad(parseInt(str.substr(0, 2), 16).toString(2), 8, '0')),
+      deviceInfo: this.getDeviceInfo(
+        f.strPad(parseInt(str.substr(0, 2), 16).toString(2), 8, '0')
+      ),
       power: this.getVoltageInfo(str.substr(2, 2)),
       gsm: this.getGSMInfo(str.substr(4, 2)),
       alarmLang: this.getAlarmLanguage(str.substr(6, 2), str.substr(8, 2))
@@ -328,24 +354,47 @@ class Adapter {
     return data
   }
 
-  setRefreshTime (interval, duration) { }
+  // setRefreshTime (interval, duration) {}
 
   /* INTERNAL FUNCTIONS */
-  sendCommand (data: Buffer) {
+  private sendCommand (data: Buffer): void {
     this.device.send(data)
   }
 
-  formatData (params: string | (string | Buffer)[]) {
+  formatData (params: string | (string | Buffer)[]): string {
     let str = this.format.start
-    if (typeof (params) === 'string') {
+    if (typeof params === 'string') {
       str += params
     } else if (params instanceof Array) {
       str += params.join(this.format.separator)
     } else {
-      console.error('The parameters to send to the device has to be a string or an array')
+      console.error(
+        'The parameters to send to the device has to be a string or an array'
+      )
     }
     str += this.format.end
     return str
+  }
+
+  command (msg: Buffer, type: boolean): Buffer {
+    const data = f.bufferToHexString(msg)
+    const protocol = '80'
+    // protocol + content + serial + errorCheck
+    const length = type ? '15' : '16'
+
+    const flagBit = '41505642' // A P V B
+    const lengthCommand = flagBit.length + data.length
+    const serial = f.strPad(this.__count, 4, '0')
+
+    const str = length + protocol + lengthCommand + flagBit + data + serial
+
+    this.__count++
+
+    const errorCheck = f.strPad(crc16(str).toString(16), 4, '0')
+
+    const buffer = Buffer.from('7878' + str + errorCheck + '0d0a', 'hex')
+
+    return buffer
   }
 }
 

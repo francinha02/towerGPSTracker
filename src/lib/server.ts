@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events'
-import net from 'net'
+import net, { Socket } from 'net'
 import fs from 'fs/promises'
 import path from 'path'
 import Device from './device'
@@ -8,12 +8,12 @@ import { Adapter, modelName } from './adapters/gt06'
 
 export default class Server extends EventEmitter {
   private opts: Options
-  private callback
-  private devices: any[]
+  private callback: (device: Device, connection: net.Socket) => void
+  private devices: Socket[]
   private device: Device
   private server: net.Server
   private debug: boolean
-  private availableAdapters: object
+  private availableAdapters: { [x: string]: any; GT02D?: string }
   private deviceAdapter: Adapter
   private defaults: Options = {
     debug: false,
@@ -21,73 +21,87 @@ export default class Server extends EventEmitter {
     deviceAdapter: false
   }
 
-  constructor (opts: Options, callback: { (device: Device, connection: net.Socket): void }) {
+  constructor (
+    opts: Options,
+    command: Buffer,
+    callback: { (device: Device, connection: Socket): void }
+  ) {
     super()
     this.opts = opts
     this.callback = callback
 
     this.opts = Object.assign(this.defaults, opts)
     this.devices = []
-    this.availableAdapters = { GT02D: './adapters/gt02d' }
+    this.availableAdapters = { GT02D: './adapters/gt06' }
 
     this.init(() => {
-      this.server = net.createServer((connection: net.Socket) => {
-        const adapter = this.getAdapter()
-        // We create an new device and give the an adapter to parse the incoming messages
-        const device = new Device(adapter, connection, this)
-        this.device = device
-        this.devices.push(connection)
+      this.server = net
+        .createServer((connection: net.Socket) => {
+          const adapter = this.getAdapter()
+          // We create an new device and give the an adapter to parse the incoming messages
+          connection.device = new Device(adapter, connection, this)
+          this.device = connection.device
+          this.devices.push(connection)
 
-        // Once we receive data...
-        connection.on('data', (data) => {
-          device.emit('data', data)
+          // Once we receive data...
+          connection.on('data', data => {
+            connection.device.emit('data', data)
+          })
+
+          // Remove the device from the list when it leaves
+          connection.on('end', () => {
+            this.devices.splice(this.devices.indexOf(connection), 1)
+            connection.device.emit('disconnected')
+          })
+
+          callback(connection.device, connection)
+
+          connection.device.emit('connected')
         })
-
-        // Remove the device from the list when it leaves
-        connection.on('end', () => {
-          this.devices.splice(this.devices.indexOf(connection), 1)
-          device.emit('disconnected')
-        })
-
-        callback(device, connection)
-
-        device.emit('connected')
-      }).listen(opts.port, '201.39.69.70')
+        .listen(opts.port, process.env.HOST)
     })
   }
 
   //! SOME FUNCTIONS
-  setAdapter (adapter: Adapter) {
+  setAdapter (adapter: Adapter): void {
     // if (typeof adapter !== 'function') {
     //   throw new Error('The adapter needs an Adapter() method to start an instance of it')
     // }
     this.deviceAdapter = adapter
   }
 
-  getAdapter () {
+  getAdapter (): Adapter {
     return this.deviceAdapter
   }
 
-  addAdapter (name: string, value: string) {
+  addAdapter (name: string, value: string): void {
     Object.defineProperty(this.availableAdapters, name, {
       value: value,
       enumerable: true
     })
   }
 
-  async init (callback) {
+  private async init (callback: { (): void; (): void }): Promise<void> {
     // Set debug
     this.setDebug(this.opts.debug)
 
     //! DEVICE ADAPTER INITIALIZATION
     if (!this.opts.deviceAdapter) {
-      console.error('The app don\'t set the deviceAdapter to use. Which model is sending data to this server?')
+      console.error(
+        "The app don't set the deviceAdapter to use. Which model is sending data to this server?"
+      )
     }
 
     if (typeof this.opts.deviceAdapter === 'string') {
       // Verifica se o modelo selecionado tem um adaptador disponível.
-      if (typeof this.availableAdapters[this.opts.deviceAdapter] === 'undefined' || this.availableAdapters[this.opts.deviceAdapter] === null) {
-        this.doLog(`The class adapter for ${this.opts.deviceAdapter} doesn't exist or is null\r\n`)
+      if (
+        typeof this.availableAdapters[this.opts.deviceAdapter] ===
+          'undefined' ||
+        this.availableAdapters[this.opts.deviceAdapter] === null
+      ) {
+        this.doLog(
+          `The class adapter for ${this.opts.deviceAdapter} doesn't exist or is null\r\n`
+        )
       }
 
       // Pega o valor do arquivo do adaptador
@@ -106,10 +120,12 @@ export default class Server extends EventEmitter {
     this.emit('init')
 
     // FINAL INIT MESSAGE
-    console.log(`\nGPS LISTENER running at port ${this.opts.port} EXPECTING DEVICE MODEL: ${modelName}`)
+    console.log(
+      `\nGPS LISTENER running at port ${this.opts.port} EXPECTING DEVICE MODEL: ${modelName}`
+    )
   }
 
-  doLog (msg: string | Uint8Array, from?: string) {
+  doLog (msg: string | Uint8Array, from?: string): boolean {
     // If debug is disabled, return false
     if (this.getDebug() === false) return false
 
@@ -117,24 +133,32 @@ export default class Server extends EventEmitter {
     if (!from) from = 'SERVER'
 
     msg = `#${from}: ${msg}`
-    fs.writeFile(path.resolve(__dirname, '..', 'log', `${from}.txt`), msg, { flag: 'a', encoding: 'utf8' })
+    fs.writeFile(path.resolve(__dirname, '..', 'log', `${from}.txt`), msg, {
+      flag: 'a',
+      encoding: 'utf8'
+    })
   }
 
   // SOME SETTERS & GETTERS
-  setDebug (val: boolean) {
-    this.debug = (val === true)
+  setDebug (val: boolean): void {
+    this.debug = val === true
   }
 
-  getDebug () {
+  private getDebug (): boolean {
     return this.debug
   }
 
-  findDevice (deviceID) {
+  findDevice (deviceID: string): Device {
     for (const i in this.devices) {
       const dev = this.devices[i].device
       if (dev.uid === deviceID) {
         return dev
       }
     }
+  }
+
+  sendTo (deviceID: string, msg: Buffer, type: boolean): void {
+    const dev = this.findDevice(deviceID)
+    dev.sendCommand(msg, type)
   }
 }

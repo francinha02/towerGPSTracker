@@ -1,5 +1,5 @@
 export interface Options {
-  debug: boolean,
-  port: number,
-  deviceAdapter: boolean | string
+  debug: boolean;
+  port: number;
+  deviceAdapter: boolean | string;
 }
