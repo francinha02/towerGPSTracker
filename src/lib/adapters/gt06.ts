@@ -1,6 +1,15 @@
-import { DateTime } from 'luxon'
-import { filter } from 'mcc-mnc-list'
-import { Alarm, Control, Course, CourseStatus, Format, GPS, Heartbeat, LanguagePack, Parts, TerminalInformation } from '../models/gt06'
+import {
+  Control,
+  CourseStatus,
+  Event,
+  LanguagePack,
+  ParseAlarm,
+  ParsedMsg,
+  ParseLocation,
+  ParseLogin,
+  ParseStatus,
+  TerminalInformation
+} from '../models/gt06'
 import * as f from '../functions/functions'
 import Device from '../device'
 import crc16 from '../functions/crc16'
@@ -10,84 +19,102 @@ const modelName = 'GT06'
 const compatibleHardware = ['GT06/supplier']
 
 class Adapter {
-  private format: Format;
   private device: Device;
-  private __count;
+  private __count: number;
+  private imei: number;
+  private msgBufferRaw: Buffer[];
+  private msgBuffer: ParsedMsg[];
 
   constructor (device: Device) {
-    this.format = { start: '(', end: ')', separator: '' }
     this.device = device
+    this.msgBufferRaw = new Array<Buffer>()
     this.__count = 1
+    this.imei = null
   }
 
-  parseData (data: string | Parts | Buffer): Parts {
-    data = f.bufferToHexString(data)
-
-    const parts: Parts = {
-      start: data.substr(0, 4),
-      action: '',
-      cmd: '',
-      count: '',
+  parseData (data: Buffer): ParsedMsg {
+    const parsed: ParsedMsg = {
+      expectsResponse: false,
+      deviceID: null,
+      parseTime: Date.now(),
+      event: {
+        number: 0,
+        string: ''
+      },
       data: '',
-      deviceID: '',
-      finish: '',
-      gsm: 0,
-      length: 0,
-      power: 0,
-      protocolID: ''
+      responseMsg: Buffer.from('787805FFFFFFFFFF0d0a', 'hex'),
+      action: '',
+      cmd: ''
     }
 
-    if (parts.start === '7878') {
-      parts.length = parseInt(data.substr(4, 2), 16)
-      parts.protocolID = data.substr(6, 2)
-      parts.finish = data.substr(6 + parts.length * 2, 4)
-
-      if (parts.finish !== '0d0a') {
-        console.error('Finish code incorrect')
-      }
-      if (parts.protocolID === '01') {
-        // Login Message
-        parts.deviceID = data.substr(8, 16)
-        parts.cmd = Control.loginRequest
-        parts.action = Control.loginRequest
-      } else if (parts.protocolID === '12') {
-        // Location Data
-        parts.data = data.substr(8, parts.length * 2 + 2)
-        parts.cmd = Control.ping
-        parts.action = Control.ping
-      } else if (parts.protocolID === '13') {
-        // Status information
-        parts.data = data.substr(8, parts.length * 2 + 2)
-        parts.cmd = Control.heartbeat
-        parts.action = Control.heartbeat
-      } else if (parts.protocolID === '16' || parts.protocolID === '18') {
-        // Alarm data
-        parts.data = data.substr(8, parts.length * 2 + 2)
-        parts.cmd = Control.alert
-        parts.action = Control.alert
-      } else if (parts.protocolID === '15') {
-        parts.data = data.substring(8, parts.length * 2 + 2)
-        parts.cmd = Control.noop
-        parts.action = Control.noop
-      } else {
-        parts.cmd = Control.noop
-        parts.action = Control.noop
-      }
+    if (!Adapter.checkHeader(data.slice(0, 2))) {
+      throw new Error(`Unknown message header: ${data}`)
     }
 
-    return parts
+    this.msgBufferRaw = Adapter.sliceMsgsInBuff(data).slice()
+    this.msgBufferRaw.forEach((msg, idx) => {
+      switch (Adapter.selectEvent(msg).number) {
+        case 0x01: // login message
+          parsed.data = Adapter.parseLogin(msg)
+          parsed.expectsResponse = true
+          parsed.deviceID = Adapter.parseLogin(msg).imei
+          parsed.responseMsg = this.createResponse(msg)
+          parsed.cmd = Control.loginRequest
+          parsed.action = Control.loginRequest
+          break
+        case 0x12:
+          parsed.data = Adapter.parseLocation(msg)
+          parsed.cmd = Control.ping
+          parsed.action = Control.ping
+          break
+        case 0x13: // status message
+          parsed.data = Adapter.parseStatus(msg)
+          parsed.expectsResponse = true
+          parsed.responseMsg = this.createResponse(msg)
+          parsed.cmd = Control.heartbeat
+          parsed.action = Control.heartbeat
+          break
+        case 0x16:
+        case 0x18:
+          parsed.data = Adapter.parseAlarm(msg)
+          parsed.expectsResponse = true
+          parsed.responseMsg = this.createResponse(msg)
+          parsed.cmd = Control.alert
+          parsed.action = Control.alert
+          break
+        default:
+          console.log({
+            error: 'unknown message type',
+            event: Adapter.selectEvent(msg)
+          })
+          break
+      }
+
+      parsed.event = Adapter.selectEvent(msg)
+      parsed.parseTime = Date.now()
+
+      if (idx === this.msgBufferRaw.length - 1) {
+        Object.assign(this, parsed)
+      }
+      this.msgBuffer.push(parsed)
+    })
+    return parsed
+  }
+
+  clearMsgBuffer (): void {
+    this.msgBuffer.length = 0
   }
 
   authorize (protocol: string): Buffer {
     const length = '05'
     const protocolID = protocol
-    const serial = f.strPad(this.__count, 4, '0')
+    const serial = f.strPad(this.__count.toString(), 4, '0')
 
-    const str = length + protocolID + serial
+    const str = Buffer.from(length + protocolID + serial)
 
     this.__count++
 
-    const errorCheck = f.strPad(crc16(str).toString(16), 4, '0')
+    const errorCheck = f.strPad(crc16(str).toString('hex'), 4, '0')
     const buffer: Buffer = Buffer.from(
       '7878' + str + errorCheck + '0d0a',
       'hex'
@@ -96,60 +123,175 @@ class Adapter {
     return buffer
   }
 
-  synchronousClock (): void {
-    const date = new Date()
-
-    const str =
-      date.getFullYear().toString().substr(2, 2) +
-      f.zeroPad(date.getMonth() + 1, 2).toString() +
-      f.zeroPad(date.getDate(), 2).toString() +
-      f.zeroPad(date.getHours(), 2).toString() +
-      f.zeroPad(date.getMinutes(), 2).toString() +
-      f.zeroPad(date.getSeconds(), 2).toString() +
-      f.zeroPad(this.__count, 4).toString()
-
-    this.__count++
-
-    const errorCheck = f.strPad(crc16(str).toString(16), 4, '0')
-    const buffer = Buffer.from('7878' + str + errorCheck + '0d0a', 'hex')
-    this.sendCommand(buffer)
+  private static checkHeader (header: Buffer): boolean {
+    return header.equals(Buffer.from('7878', 'hex'))
   }
 
-  runOther (cmd: string, msgParts: Parts): void {
+  private static selectEvent (data: Buffer): Event {
+    let eventStr: string
+    switch (data[3]) {
+      case 0x01:
+        eventStr = 'login'
+        break
+      case 0x12:
+        eventStr = 'location'
+        break
+      case 0x13:
+        eventStr = 'status'
+        break
+      case 0x16:
+        eventStr = 'alarm'
+        break
+      default:
+        eventStr = 'unknown'
+        break
+    }
+    return { number: data[3], string: eventStr }
+  }
+
+  private static sliceMsgsInBuff (data: Buffer): Array<Buffer> {
+    const startPattern = Buffer.from('7878', 'hex')
+    let nextStart = data.indexOf(startPattern, 2)
+    const msgArray: Buffer[] = []
+
+    if (nextStart === -1) {
+      msgArray.push(data)
+      return msgArray
+    }
+    msgArray.push(data.slice(0, nextStart))
+    let redMsgBuff = data.slice(nextStart)
+
+    while (nextStart !== -1) {
+      nextStart = redMsgBuff.indexOf(startPattern, 2)
+      if (nextStart === -1) {
+        msgArray.push(redMsgBuff)
+        return msgArray
+      }
+      msgArray.push(redMsgBuff.slice(0, nextStart))
+      redMsgBuff = redMsgBuff.slice(nextStart)
+    }
+    return msgArray
+  }
+
+  private static parseLogin (data: Buffer): ParseLogin {
+    return {
+      imei: parseInt(data.slice(4, 12).toString('hex'), 10),
+      serialNumber: data.readUInt16BE(12)
+      // errorCheck: data.readUInt16BE(14)
+    }
+  }
+
+  private static parseLocation (data: Buffer): ParseLocation {
+    const dataSheet = {
+      startBit: data.readUInt16BE(0),
+      protocolLength: data.readUInt8(2),
+      protocolNumber: data.readUInt8(3),
+      fixTime: data.slice(4, 10),
+      quantity: data.readUInt8(10),
+      lat: data.readUInt32BE(11),
+      lon: data.readUInt32BE(15),
+      speed: data.readUInt8(19),
+      course: data.readUInt16BE(20),
+      mcc: data.readUInt16BE(22),
+      mnc: data.readUInt8(24),
+      lac: data.readUInt16BE(25),
+      cellId: parseInt(data.slice(27, 30).toString('hex'), 16),
+      serialNr: data.readUInt16BE(30),
+      errorCheck: data.readUInt16BE(32)
+    }
+
+    const parsed: ParseLocation = {
+      fixTime: Adapter.parseDateTime(dataSheet.fixTime).toISOString(),
+      satCnt: (dataSheet.quantity & 0xf0) >> 4,
+      satCntActive: dataSheet.quantity & 0x0f,
+      lat: Adapter.decodeGt06LatLon(dataSheet.lat, dataSheet.course),
+      lon: Adapter.decodeGt06LatLon(dataSheet.lon, dataSheet.course),
+      speed: dataSheet.speed,
+      speedUnit: 'km/h',
+      orientation: Adapter.getCourseStatus(dataSheet.course),
+      mcc: dataSheet.mcc,
+      mnc: dataSheet.mnc,
+      lac: dataSheet.lac,
+      cellId: dataSheet.cellId,
+      serialNr: dataSheet.serialNr,
+      errorCheck: dataSheet.errorCheck
+    }
+
+    return parsed
+  }
+
+  private static parseStatus (data: Buffer): ParseStatus {
+    const statusInfo = data.slice(4, 9)
+    const terminalInfo = Adapter.getDeviceInfo(
+      statusInfo.slice(0, 1).readUInt8(0)
+    )
+    const voltageLevel = Adapter.getVoltageInfo(
+      statusInfo.slice(1, 2).readUInt8(0)
+    )
+    const gsmSigStrength = Adapter.getGSMInfo(
+      statusInfo.slice(2, 3).readUInt8(0)
+    )
+
+    return {
+      terminalInfo: terminalInfo,
+      voltageLevel: voltageLevel,
+      gsmSigStrength: gsmSigStrength
+    }
+  }
+
+  private static parseAlarm (data: Buffer): ParseAlarm {
+    const dataSheet = {
+      startBit: data.readUInt16BE(0),
+      protocolLength: data.readUInt8(2),
+      protocolNumber: data.readUInt8(3),
+      fixTime: data.slice(4, 10),
+      quantity: data.readUInt8(10),
+      lat: data.readUInt32BE(11),
+      lon: data.readUInt32BE(15),
+      speed: data.readUInt8(19),
+      course: data.readUInt16BE(20),
+      mcc: data.readUInt16BE(22),
+      mnc: data.readUInt8(24),
+      lac: data.readUInt16BE(25),
+      cellId: parseInt(data.slice(27, 30).toString('hex'), 16),
+      terminalInfo: data.readUInt8(31),
+      voltageLevel: data.readUInt8(32),
+      gpsSignal: data.readUInt8(33),
+      alarmLang: data.readUInt16BE(34),
+      serialNr: data.readUInt16BE(36),
+      errorCheck: data.readUInt16BE(38)
+    }
+
+    const parsed = {
+      fixTime: Adapter.parseDateTime(dataSheet.fixTime),
+      satCnt: (dataSheet.quantity & 0xf0) >> 4,
+      satCntActive: dataSheet.quantity & 0x0f,
+      lat: Adapter.decodeGt06LatLon(dataSheet.lat, dataSheet.course),
+      lon: Adapter.decodeGt06LatLon(dataSheet.lon, dataSheet.course),
+      speed: dataSheet.speed,
+      speedUnit: 'km/h',
+      orientation: Adapter.getCourseStatus(dataSheet.course),
+      mmc: dataSheet.mnc,
+      cellId: dataSheet.cellId,
+      terminalInfo: Adapter.getDeviceInfo(dataSheet.terminalInfo),
+      voltageLevel: Adapter.getVoltageInfo(dataSheet.voltageLevel),
+      gpsSignal: Adapter.getGSMInfo(dataSheet.gpsSignal),
+      alarmLang: dataSheet.alarmLang,
+      serialNr: dataSheet.serialNr,
+      errorCheck: dataSheet.errorCheck
+    }
+
+    return parsed
+  }
+
+  runOther (cmd: string, msgParts: ParsedMsg): void {
     console.log(cmd, msgParts)
   }
 
-  requestLoginToDevice (): void {
-    // TODO: Implement this
-  }
-
-  receiveAlarm (msgParts: Parts): Alarm {
-    const str = msgParts.data
-
-    const data: Alarm = {
-      dateTime: this.parseDateTime(str, 'America/Sao_Paulo'),
-      setCount: str.substr(12, 2), // Length of GPS information, quantity of positioning satellites
-      latitudeRaw: str.substr(14, 8),
-      longitudeRaw: str.substr(22, 8),
-      latitude: f.dexToDegrees(str.substr(14, 8)),
-      longitude: f.dexToDegrees(str.substr(22, 8)),
-      speed: parseInt(str.substr(30, 2), 16),
-      orientation: this.getCourseStatus(
-        f.strPad(parseInt(str.substr(32, 4), 16).toString(2), 8, '0')
-      ),
-      lbs: str.substr(36, 18),
-      deviceInfo: this.getDeviceInfo(
-        f.strPad(parseInt(str.substr(54, 2), 16).toString(2), 8, '0')
-      ),
-      power: this.getVoltageInfo(str.substr(56, 2)),
-      gsm: this.getGSMInfo(str.substr(58, 2)),
-      alarmLang: this.getAlarmLanguage(str.substr(60, 2), str.substr(62, 2))
-    }
-
-    return data
-  }
-
-  getAlarmLanguage (formerBit: string, latterBit: string): LanguagePack {
+  private static getAlarmLanguage (
+    formerBit: string,
+    latterBit: string
+  ): LanguagePack {
     const data = {
       formerBit: '',
       latterBit: ''
@@ -187,193 +329,123 @@ class Adapter {
     return data
   }
 
-  getDeviceInfo (info: string): TerminalInformation {
+  private static getDeviceInfo (data: number): TerminalInformation {
     /**
      * Gets the binary string number and parse data to define status information of the mobile phone
      * @param info The binary value of status information. The index of the first character in the string is zero.
      */
-    const data = {
-      connected: info.substr(0, 1),
-      gpsTracking: info.substr(1, 1),
-      alarm: info.substr(2, 3),
-      charge: info.substr(5, 1),
-      acc: info.substr(6, 1),
-      activated: info.substr(7, 1)
+    const info = {
+      status: Boolean(data & 0x01),
+      gpsTracking: Boolean(data & 0x40),
+      alarmType: 'normal',
+      charging: Boolean(data & 0x04),
+      ignition: Boolean(data & 0x02),
+      relayState: Boolean(data & 0x80)
+    }
+    const alarm = (data & 0x38) >> 3
+    switch (alarm) {
+      case 1:
+        info.alarmType = 'shock'
+        break
+      case 2:
+        info.alarmType = 'power cut'
+        break
+      case 3:
+        info.alarmType = 'low battery'
+        break
+      case 4:
+        info.alarmType = 'sos'
+        break
+      default:
+        info.alarmType = 'normal'
+        break
     }
 
-    switch (data.alarm) {
-      case '100':
-        data.alarm = 'SOS'
-        break
-      case '011':
-        data.alarm = 'Low Battery'
-        break
-      case '010':
-        data.alarm = 'Power Cut'
-        break
-      case '001':
-        data.alarm = 'Shock'
-        break
-      case '000':
-        data.alarm = 'Normal'
-        break
-    }
-
-    return data
+    return info
   }
 
-  getVoltageInfo (power: string): string {
-    switch (power) {
-      case '00':
-        power = 'No Power (shutdown)'
+  private static getVoltageInfo (data: number): string {
+    let voltageLevelStr = 'no power (shutting down)'
+    switch (data) {
+      case 1:
+        voltageLevelStr = 'extremely low battery'
         break
-      case '01':
-        power = 'Extremely Low Battery'
+      case 2:
+        voltageLevelStr = 'very low battery (low battery alarm)'
         break
-      case '02':
-        power = 'Very Low Battery'
+      case 3:
+        voltageLevelStr = 'low battery (can be used normally)'
         break
-      case '03':
-        power = 'Low Battery'
+      case 4:
+        voltageLevelStr = 'medium'
         break
-      case '04':
-        power = 'Medium'
+      case 5:
+        voltageLevelStr = 'high'
         break
-      case '05':
-        power = 'High'
+      case 6:
+        voltageLevelStr = 'very high'
         break
-      case '06':
-        power = 'Very High'
+      default:
+        voltageLevelStr = 'no power (shutting down)'
         break
     }
 
-    return power
+    return voltageLevelStr
   }
 
-  getGSMInfo (gsm: string): string {
-    switch (gsm) {
-      case '00':
-        gsm = 'No Signal'
+  private static getGSMInfo (data: number): string {
+    let gsmSigStrengthStr = 'no signal'
+    switch (data) {
+      case 1:
+        gsmSigStrengthStr = 'extremely weak signal'
         break
-      case '01':
-        gsm = 'Extremely Weak Signal'
+      case 2:
+        gsmSigStrengthStr = 'very weak signal'
         break
-      case '02':
-        gsm = 'Very Weak Signal'
+      case 3:
+        gsmSigStrengthStr = 'good signal'
         break
-      case '03':
-        gsm = 'Good Signal'
+      case 4:
+        gsmSigStrengthStr = 'strong signal'
         break
-      case '04':
-        gsm = 'Strong Signal'
+      default:
+        gsmSigStrengthStr = 'no signal'
         break
     }
-    return gsm
+
+    return gsmSigStrengthStr
   }
 
-  getPingData (msgParts: Parts): GPS {
-    const str: string = msgParts.data
-
-    const data: GPS = {
-      dateTime: this.parseDateTime(str, 'America/Sao_Paulo'),
-      gpsInformation: str.substr(12, 2),
-      latitude: f.dexToDegrees(str.substr(14, 8)),
-      longitude: f.dexToDegrees(str.substr(22, 8)),
-      speed: parseInt(str.substr(30, 2), 16),
-      courseStatus: this.getCourseStatus(
-        parseInt(str.substr(32, 4), 16).toString(2)
-      ),
-      mcc: parseInt(str.substr(36, 4), 16).toString(),
-      mnc: f.strPad(parseInt(str.substr(40, 2), 16).toString(), 2, '0'),
-      network: filter({
-        mcc: `${parseInt(str.substr(36, 4), 16)}`,
-        mnc: `${f.strPad(parseInt(str.substr(40, 2), 16).toString(), 2, '0')}`
-      })[0].brand,
-      lac: str.substr(42, 4),
-      cellID: str.substr(46, 6)
-    }
-
-    if (data.courseStatus.latitudePosition === Course.South) {
-      data.latitude = data.latitude * -1
-    }
-    if (data.courseStatus.longitudePosition === Course.West) {
-      data.longitude = data.longitude * -1
-    }
-
-    return data
-  }
-
-  getCourseStatus (courseStatus: string): CourseStatus {
+  private static getCourseStatus (data: number): CourseStatus {
     const result = {
-      realTime: parseInt(courseStatus.substr(2, 1)),
-      positioned: parseInt(courseStatus.substr(3, 1)),
-      longitudePosition: parseInt(courseStatus.substr(4, 1)),
-      latitudePosition: parseInt(courseStatus.substr(5, 1)),
-      course: parseInt(courseStatus.substr(6, 10), 2)
+      realTimeGps: Boolean(data & 0x2000),
+      gpsPositioned: Boolean(data & 0x1000),
+      eastLongitude: !(data & 0x0800),
+      northLatitude: Boolean(data & 0x0400),
+      course: data & 0x3ff
     }
     return result
   }
 
-  private parseDateTime (data: string, locale?: string): string {
-    const str: string = data
-
-    const year = parseInt(str.substr(0, 2), 16) + 2000
-    const month = f.strPad(parseInt(str.substr(2, 2), 16).toString(), 2, '0')
-    const day = f.strPad(parseInt(str.substr(4, 2), 16).toString(), 2, '0')
-    const hour = f.strPad(parseInt(str.substr(6, 2), 16).toString(), 2, '0')
-    const minutes = f.strPad(parseInt(str.substr(8, 2), 16).toString(), 2, '0')
-    const seconds = f.strPad(
-      parseInt(str.substr(10, 2), 16).toString(),
-      2,
-      '0'
+  private static parseDateTime (data: Buffer): Date {
+    return new Date(
+      Date.UTC(data[0] + 2000, data[1] - 1, data[2], data[3], data[4], data[5])
     )
-
-    let d: DateTime = DateTime.fromISO(
-      `${year}-${month}-${day}T${hour}:${minutes}:${seconds}`,
-      { zone: 'Asia/Shanghai' }
-    )
-    if (locale) {
-      d = d.setZone(locale)
-    }
-
-    return d.toString()
   }
 
-  receiveHeartbeat (msgParts: Parts): Heartbeat {
-    const str = msgParts.data
-
-    const data = {
-      deviceInfo: this.getDeviceInfo(
-        f.strPad(parseInt(str.substr(0, 2), 16).toString(2), 8, '0')
-      ),
-      power: this.getVoltageInfo(str.substr(2, 2)),
-      gsm: this.getGSMInfo(str.substr(4, 2)),
-      alarmLang: this.getAlarmLanguage(str.substr(6, 2), str.substr(8, 2))
+  private static decodeGt06LatLon (pos: number, course: number) {
+    let coords = pos / 60.0 / 30000.0
+    if (!(course & 0x0400)) {
+      coords = -coords
+    } else if (course & 0x0800) {
+      coords = -coords
     }
 
-    return data
+    return Math.round(coords * 1000000) / 1000000
   }
 
-  // setRefreshTime (interval, duration) {}
-
-  /* INTERNAL FUNCTIONS */
   private sendCommand (data: Buffer): void {
     this.device.send(data)
-  }
-
-  formatData (params: string | (string | Buffer)[]): string {
-    let str = this.format.start
-    if (typeof params === 'string') {
-      str += params
-    } else if (params instanceof Array) {
-      str += params.join(this.format.separator)
-    } else {
-      console.error(
-        'The parameters to send to the device has to be a string or an array'
-      )
-    }
-    str += this.format.end
-    return str
   }
 
   command (msg: Buffer, type: boolean): Buffer {
@@ -384,17 +456,48 @@ class Adapter {
 
     const flagBit = '41505642' // A P V B
     const lengthCommand = flagBit.length + data.length
-    const serial = f.strPad(this.__count, 4, '0')
+    const serial = f.strPad(this.__count.toString(), 4, '0')
 
-    const str = length + protocol + lengthCommand + flagBit + data + serial
+    const str = Buffer.from(
+      length + protocol + lengthCommand + flagBit + data + serial
+    )
 
     this.__count++
 
-    const errorCheck = f.strPad(crc16(str).toString(16), 4, '0')
+    const errorCheck = f.strPad(crc16(str).toString('hex'), 4, '0')
 
     const buffer = Buffer.from('7878' + str + errorCheck + '0d0a', 'hex')
 
     return buffer
+  }
+
+  private createResponse (data: Buffer) {
+    const respRaw = Buffer.from('787805FFFFFFd9dc0d0a', 'hex')
+    // we put the protocol of the received message into the response message
+    // at position byte 3 (0xFF in the raw message)
+    respRaw[3] = data[3]
+
+    this.appendSerial(respRaw)
+    Adapter.appendCrc16(respRaw)
+    return respRaw
+  }
+
+  private static appendCrc16 (data: Buffer) {
+    // write the crc16 at the 4th position from the right (2 bytes)
+    // the last two bytes are the line ending
+    data.writeUInt16BE(
+      crc16(data.slice(2, 6)).readUInt16BE(0),
+      data.length - 4
+    )
+  }
+
+  private appendSerial (data: Buffer) {
+    const serial = Buffer.from(
+      f.strPad(this.__count.toString(16), 4, '0'),
+      'hex'
+    )
+    data.writeUInt16BE(serial.readUInt16BE(0), data.length - 6)
+    this.__count++
   }
 }
 

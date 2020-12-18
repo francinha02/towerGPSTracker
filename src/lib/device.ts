@@ -1,18 +1,24 @@
 import { EventEmitter } from 'events'
 import { AddressInfo, Socket } from 'net'
 import { Adapter } from './adapters/gt06'
-import { Control, Parts } from './models/gt06'
+import {
+  Control,
+  ParseAlarm,
+  ParsedMsg,
+  ParseLocation,
+  ParseStatus
+} from './models/gt06'
 import * as f from './functions/functions'
 
 export default class Device extends EventEmitter {
-  private connection: Socket
-  private server
-  private adapter: Adapter
-  uid: string
-  ip: string
-  port: number
-  private name: string | boolean
-  private logged: boolean
+  private connection: Socket;
+  private server;
+  private adapter: Adapter;
+  uid: number;
+  ip: string;
+  port: number;
+  private name: string | boolean;
+  private logged: boolean;
 
   constructor (adapter: Adapter, connection: Socket, gpsServer) {
     super()
@@ -64,10 +70,10 @@ export default class Device extends EventEmitter {
     })
   }
 
-  private makeAction (action: string, msgParts: Parts) {
+  private makeAction (action: string, msgParts: ParsedMsg) {
     // If we're not logged
     if (action !== Control.loginRequest && !this.logged) {
-      this.adapter.requestLoginToDevice()
+      // this.adapter.requestLoginToDevice()
       this.doLog(
         `${this.getUID()} is trying to '${action}' but it isn't logged. Action wasn't executed\r\n`
       )
@@ -91,28 +97,28 @@ export default class Device extends EventEmitter {
         this.adapter.runOther(msgParts.cmd, msgParts)
         break
     }
+
+    return true
   }
 
   /****************************************
   LOGIN & LOGOUT
   ****************************************/
-  private loginRequest (msgParts: Parts): void {
+  private loginRequest (msgParts: ParsedMsg): void {
     this.emit(Control.loginRequest, this.getUID(), msgParts)
   }
 
-  loginAuthorized (val: boolean, msgParts: Parts): void {
+  loginAuthorized (val: boolean, msgPart: ParsedMsg): void {
     if (val) {
       this.doLog(`Device ${this.getUID()} has been authorized. Welcome!\r\n`)
       this.logged = true
-      const send = this.adapter.authorize('01')
-      this.send(send)
+      this.send(msgPart.responseMsg)
     }
   }
 
-  responsePacket (val: boolean, protocol: string): void {
+  responsePacket (val: boolean, msgParts: ParsedMsg): void {
     if (val) {
-      const send = this.adapter.authorize(protocol)
-      this.send(send)
+      this.send(msgParts.responseMsg)
     }
   }
 
@@ -130,8 +136,8 @@ export default class Device extends EventEmitter {
   /****************************************
   RECEIVING GPS POSITION FROM THE DEVICE
   ****************************************/
-  private ping (msgParts: Parts): boolean {
-    const gpsData = this.adapter.getPingData(msgParts)
+  private ping (msgParts: ParsedMsg): boolean {
+    const gpsData: ParseLocation = <ParseLocation>msgParts.data
     if (!gpsData) {
       // Something bad happened
       this.doLog("GPS Data can't be parsed. Discarding packet...\r\n")
@@ -143,22 +149,17 @@ export default class Device extends EventEmitter {
       Optionals:
       orientation, speed, mileage, etc */
 
-    this.doLog(
-      `Position received ('${gpsData.latitude}', '${gpsData.longitude}')\r\n`
-    )
-    Object.defineProperty(gpsData, 'fromCMD', {
-      enumerable: true,
-      value: msgParts.cmd
-    })
+    this.doLog(`Position received ('${gpsData.lat}', '${gpsData.lon}')\r\n`)
+
     this.emit(Control.ping, gpsData, msgParts)
   }
 
   /****************************************
   RECEIVING ALARM
   *****************************************/
-  private receiveAlarm (msgParts: Parts): boolean {
+  private receiveAlarm (msgParts: ParsedMsg): boolean {
     // We pass the message parts to the adapter and they have to say with type of alarm it is.
-    const alarmData = this.adapter.receiveAlarm(msgParts)
+    const alarmData: ParseAlarm = <ParseAlarm>msgParts.data
 
     if (!alarmData) {
       // Something bad happened
@@ -170,38 +171,24 @@ export default class Device extends EventEmitter {
     {'code':'sos_alarm','msg':'SOS Alarm activated by the driver'}
     */
     this.doLog(
-      `${alarmData.deviceInfo.alarm} alarm received. Battery is ${alarmData.power}. GSM with ${alarmData.gsm}.`
+      `${alarmData.terminalInfo.alarmType} alarm received. Battery is ${alarmData.voltageLevel}. GSM with ${alarmData.gpsSignal}.`
     )
-    this.emit(
-      Control.alert,
-      alarmData.deviceInfo,
-      alarmData.power,
-      alarmData.gsm,
-      alarmData.alarmLang,
-      msgParts
-    )
+    this.emit(Control.alert, msgParts)
   }
 
   /****************************************
   RECEIVING HEARTBEAT
   *****************************************/
-  private receiveHeartbeat (msgParts: Parts): boolean {
-    const heart = this.adapter.receiveHeartbeat(msgParts)
+  private receiveHeartbeat (msgParts: ParsedMsg): boolean {
+    const heart: ParseStatus = <ParseStatus>msgParts.data
 
     if (!heart) {
       // Something bad happened
       this.doLog("Heartbeat Data can't be parsed. Discarding packet...\r\n")
       return false
     }
-    this.emit(Control.heartbeat, heart)
+    this.emit(Control.heartbeat, msgParts)
   }
-
-  /****************************************
-  SET REFRESH TIME
-  ****************************************/
-  // setRefreshTime (interval: number, duration: number) {
-  //   this.adapter.setRefreshTime(interval, duration)
-  // }
 
   /* adding methods to the adapter */
   getDevice (): typeof Device {
@@ -232,11 +219,11 @@ export default class Device extends EventEmitter {
     this.name = name
   }
 
-  getUID (): string {
+  getUID (): number {
     return this.uid
   }
 
-  private setUID (uid: string) {
+  private setUID (uid: number) {
     this.uid = uid
   }
 }

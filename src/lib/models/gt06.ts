@@ -1,81 +1,108 @@
 /* eslint-disable no-unused-vars */
-export interface Format {
-  start: string,
-  end: string,
-  separator: string,
+export interface Parts {
+  start: string;
+  length: number;
+  protocolID: string;
+  data: string;
+  deviceID: string;
+  gsm: number;
+  power: number;
+  cmd: string;
+  action: string;
+  count: string;
+  finish: string;
 }
 
-export interface Parts {
-  start: string,
-  length: number,
-  protocolID: string,
-  data: string,
-  deviceID: string,
-  gsm: number,
-  power: number,
-  cmd: string,
-  action: string,
-  count: string,
-  finish: string,
+export interface Event {
+  number: number;
+  string: string;
 }
 
 export interface CourseStatus {
-  realTime: number,
-  positioned: number,
-  longitudePosition: number,
-  latitudePosition: number,
-  course: number,
-}
-
-export interface LanguagePack {
-  formerBit: string,
-  latterBit: string,
+  realTimeGps: boolean,
+  gpsPositioned: boolean,
+  eastLongitude: boolean,
+  northLatitude: boolean,
+  course: number
 }
 
 export interface TerminalInformation {
-  connected: string,
-  gpsTracking: string,
-  alarm: string,
-  charge: string,
-  acc: string,
-  activated: string,
+  status: boolean;
+  gpsTracking: boolean;
+  alarmType: string;
+  charging: boolean;
+  ignition: boolean;
+  relayState: boolean;
 }
 
-export interface GPS {
-  dateTime: Date | string,
-  gpsInformation: string,
-  latitude: number,
-  longitude: number,
-  speed: number,
-  courseStatus: CourseStatus,
-  mcc: string,
-  mnc: string,
-  network: string,
-  lac: string,
-  cellID: string,
+export interface ParseLogin {
+  imei: number;
+  serialNumber: number;
 }
 
-export interface Alarm {
-  dateTime: string,
-  setCount: string,
-  latitudeRaw: string,
-  longitudeRaw: string,
-  latitude: number,
-  longitude: number,
-  speed: number,
-  orientation: CourseStatus,
-  lbs: string,
-  deviceInfo: TerminalInformation,
-  power: string,
-  gsm: string,
-  alarmLang: LanguagePack,
+export interface ParseLocation {
+  fixTime: string | Date;
+  satCnt: number;
+  satCntActive: number;
+  lat: number;
+  lon: number;
+  speed: number;
+  speedUnit: string;
+  orientation: CourseStatus;
+  mcc: number;
+  mnc: number;
+  lac: number;
+  cellId: number;
+  serialNr: number;
+  errorCheck: number;
+}
+
+export interface ParseAlarm {
+  fixTime: string | Date;
+  satCnt: number;
+  satCntActive: number;
+  lat: number;
+  lon: number;
+  speed: number;
+  speedUnit: string;
+  orientation: CourseStatus;
+  mmc: number;
+  cellId: number;
+  terminalInfo: TerminalInformation;
+  voltageLevel: string;
+  gpsSignal: string;
+  alarmLang: number;
+  serialNr: number;
+  errorCheck: number;
+}
+
+export interface ParseStatus {
+  terminalInfo: TerminalInformation;
+  voltageLevel: string;
+  gsmSigStrength: string;
+}
+
+export interface ParsedMsg {
+  expectsResponse: boolean;
+  deviceID: number;
+  parseTime: number;
+  event: Event;
+  responseMsg: Buffer;
+  cmd: string;
+  action: string;
+  data: string | ParseLogin | ParseLocation | ParseStatus | ParseAlarm;
+}
+
+export interface LanguagePack {
+  formerBit: string;
+  latterBit: string;
 }
 
 export interface Heartbeat {
-  deviceInfo: TerminalInformation,
-  power: string,
-  gsm: string,
-  alarmLang: LanguagePack
+  deviceInfo: TerminalInformation;
+  power: string;
+  gsm: string;
+  alarmLang: LanguagePack;
 }
 
 export enum Control {
@@ -86,11 +113,4 @@ export enum Control {
   heartbeat = 'heartbeat',
   alert = 'alert',
   replied = 'replied',
-}
-
-export enum Course {
-  East = 0,
-  West = 1,
-  South = 0,
-  North = 1,
 }

@@ -7,23 +7,22 @@ import { Options } from './models/server'
 import { Adapter, modelName } from './adapters/gt06'
 
 export default class Server extends EventEmitter {
-  private opts: Options
-  private callback: (device: Device, connection: net.Socket) => void
-  private devices: Socket[]
-  private device: Device
-  private server: net.Server
-  private debug: boolean
-  private availableAdapters: { [x: string]: any; GT02D?: string }
-  private deviceAdapter: Adapter
+  private opts: Options;
+  private callback: (device: Device, connection: net.Socket) => void;
+  private devices: Socket[];
+  private device: Device;
+  private server: net.Server;
+  private debug: boolean;
+  private availableAdapters: { [x: string]: string; GT02D?: string };
+  private deviceAdapter: Adapter;
   private defaults: Options = {
     debug: false,
     port: 2790,
     deviceAdapter: false
-  }
+  };
 
   constructor (
     opts: Options,
-    command: Buffer,
     callback: { (device: Device, connection: Socket): void }
   ) {
     super()
@@ -35,31 +34,30 @@ export default class Server extends EventEmitter {
     this.availableAdapters = { GT02D: './adapters/gt06' }
 
     this.init(() => {
-      this.server = net
-        .createServer((connection: net.Socket) => {
-          const adapter = this.getAdapter()
-          // We create an new device and give the an adapter to parse the incoming messages
-          connection.device = new Device(adapter, connection, this)
-          this.device = connection.device
-          this.devices.push(connection)
+      this.server = net.createServer((connection: net.Socket) => {
+        const adapter = this.getAdapter()
+        // We create an new device and give the an adapter to parse the incoming messages
+        connection.device = new Device(adapter, connection, this)
+        this.device = connection.device
+        this.devices.push(connection)
 
-          // Once we receive data...
-          connection.on('data', data => {
-            connection.device.emit('data', data)
-          })
-
-          // Remove the device from the list when it leaves
-          connection.on('end', () => {
-            this.devices.splice(this.devices.indexOf(connection), 1)
-            connection.device.emit('disconnected')
-          })
-
-          callback(connection.device, connection)
-
-          connection.device.emit('connected')
+        // Once we receive data...
+        connection.on('data', (data) => {
+          connection.device.emit('data', data)
         })
-        .listen(opts.port, process.env.HOST)
+
+        // Remove the device from the list when it leaves
+        connection.on('end', () => {
+          this.devices.splice(this.devices.indexOf(connection), 1)
+          connection.device.emit('disconnected')
+        })
+
+        callback(connection.device, connection)
+
+        connection.device.emit('connected')
+      })
     })
+    this.server.listen(opts.port, process.env.HOST)
   }
 
   //! SOME FUNCTIONS
@@ -94,11 +92,7 @@ export default class Server extends EventEmitter {
 
     if (typeof this.opts.deviceAdapter === 'string') {
       // Verifica se o modelo selecionado tem um adaptador disponível.
-      if (
-        typeof this.availableAdapters[this.opts.deviceAdapter] ===
-          'undefined' ||
-        this.availableAdapters[this.opts.deviceAdapter] === null
-      ) {
+      if (!this.availableAdapters[this.opts.deviceAdapter]) {
         this.doLog(
           `The class adapter for ${this.opts.deviceAdapter} doesn't exist or is null\r\n`
         )
@@ -148,7 +142,7 @@ export default class Server extends EventEmitter {
     return this.debug
   }
 
-  findDevice (deviceID: string): Device {
+  findDevice (deviceID: number): Device {
     for (const i in this.devices) {
       const dev = this.devices[i].device
       if (dev.uid === deviceID) {
@@ -157,7 +151,7 @@ export default class Server extends EventEmitter {
     }
   }
 
-  sendTo (deviceID: string, msg: Buffer, type: boolean): void {
+  sendTo (deviceID: number, msg: Buffer, type: boolean): void {
     const dev = this.findDevice(deviceID)
     dev.sendCommand(msg, type)
   }
