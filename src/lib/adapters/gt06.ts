@@ -11,7 +11,6 @@ import {
   TerminalInformation
 } from '../models/gt06'
 import * as f from '../functions/functions'
-import Device from '../device'
 import crc16 from '../functions/crc16'
 
 const protocol = 'GT06'
@@ -19,17 +18,14 @@ const modelName = 'GT06'
 const compatibleHardware = ['GT06/supplier']
 
 class Adapter {
-  private device: Device;
   private __count: number;
-  private imei: number;
   private msgBufferRaw: Buffer[];
   private msgBuffer: ParsedMsg[];
 
-  constructor (device: Device) {
-    this.device = device
-    this.msgBufferRaw = new Array<Buffer>()
+  constructor () {
+    this.msgBufferRaw = []
+    this.msgBuffer = []
     this.__count = 1
-    this.imei = null
   }
 
   parseData (data: Buffer): ParsedMsg {
@@ -85,7 +81,8 @@ class Adapter {
         default:
           console.log({
             error: 'unknown message type',
-            event: Adapter.selectEvent(msg)
+            event: Adapter.selectEvent(msg),
+            msg: msg
           })
           break
       }
@@ -103,24 +100,6 @@ class Adapter {
 
   clearMsgBuffer (): void {
     this.msgBuffer.length = 0
-  }
-
-  authorize (protocol: string): Buffer {
-    const length = '05'
-    const protocolID = protocol
-    const serial = f.strPad(this.__count.toString(), 4, '0')
-
-    const str = Buffer.from(length + protocolID + serial)
-
-    this.__count++
-
-    const errorCheck = f.strPad(crc16(str).toString('hex'), 4, '0')
-    const buffer: Buffer = Buffer.from(
-      '7878' + str + errorCheck + '0d0a',
-      'hex'
-    )
-
-    return buffer
   }
 
   private static checkHeader (header: Buffer): boolean {
@@ -284,10 +263,6 @@ class Adapter {
     return parsed
   }
 
-  runOther (cmd: string, msgParts: ParsedMsg): void {
-    console.log(cmd, msgParts)
-  }
-
   private static getAlarmLanguage (
     formerBit: string,
     latterBit: string
@@ -444,11 +419,7 @@ class Adapter {
     return Math.round(coords * 1000000) / 1000000
   }
 
-  private sendCommand (data: Buffer): void {
-    this.device.send(data)
-  }
-
-  command (msg: Buffer, type: boolean): Buffer {
+  public command (msg: Buffer, type: boolean): Buffer {
     const data = f.bufferToHexString(msg)
     const protocol = '80'
     // protocol + content + serial + errorCheck

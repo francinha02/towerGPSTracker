@@ -2,7 +2,6 @@ import net from 'net'
 import { Control } from './lib/models/gt06'
 import { Options } from './lib/models/server'
 import Server from './lib/server'
-import * as f from './lib/functions/functions'
 
 const options: Options = {
   debug: true,
@@ -54,7 +53,11 @@ const clientServer = net.createServer(socket => {
       parts.deviceID = 0
     }
     console.log(parts.start, parts.cmd, parts.deviceID)
-    serverGT06.sendTo(parts.deviceID, Buffer.from(parts.cmd), true)
+    try {
+      serverGT06.sendTo(parts.deviceID, Buffer.from(parts.cmd), true)
+    } catch (e) {
+      console.log(e)
+    }
   })
 })
 

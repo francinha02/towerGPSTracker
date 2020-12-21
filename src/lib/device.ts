@@ -94,7 +94,7 @@ export default class Device extends EventEmitter {
         this.receiveHeartbeat(msgParts)
         break
       case Control.noop:
-        this.adapter.runOther(msgParts.cmd, msgParts)
+        this.runOther(msgParts.cmd, msgParts)
         break
     }
 
@@ -122,9 +122,9 @@ export default class Device extends EventEmitter {
     }
   }
 
-  sendCommand (msg: Buffer, type: boolean): Buffer {
+  sendCommand (msg: Buffer, type: boolean): void {
     const command = this.adapter.command(msg, type)
-    return command
+    this.send(command)
   }
 
   // TODO implement this
@@ -190,12 +190,16 @@ export default class Device extends EventEmitter {
     this.emit(Control.heartbeat, msgParts)
   }
 
+  private runOther (cmd: string, msgParts: ParsedMsg): void {
+    console.log(cmd, msgParts)
+  }
+
   /* adding methods to the adapter */
-  getDevice (): typeof Device {
+  private getDevice (): typeof Device {
     return Device
   }
 
-  send (msg: Buffer | string): void {
+  private send (msg: Buffer | string): void {
     this.emit('Send data', msg)
     const data = f.bufferToHexString(msg)
     this.doLog(`Sending to ${this.getUID()}: ${data}\r\n`)
@@ -204,22 +208,22 @@ export default class Device extends EventEmitter {
     })
   }
 
-  doLog (msg: string): void {
+  private doLog (msg: string): void {
     this.server.doLog(msg, this.getUID())
   }
 
   /****************************************
   SOME SETTERS & GETTERS
   ****************************************/
-  getName (): string | boolean {
+  private getName (): string | boolean {
     return this.name
   }
 
-  private setName (name) {
+  private setName (name: string) {
     this.name = name
   }
 
-  getUID (): number {
+  private getUID (): number {
     return this.uid
   }
 

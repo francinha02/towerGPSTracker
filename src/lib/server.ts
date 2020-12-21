@@ -61,25 +61,25 @@ export default class Server extends EventEmitter {
   }
 
   //! SOME FUNCTIONS
-  setAdapter (adapter: Adapter): void {
+  private setAdapter (adapter: Adapter): void {
     // if (typeof adapter !== 'function') {
     //   throw new Error('The adapter needs an Adapter() method to start an instance of it')
     // }
     this.deviceAdapter = adapter
   }
 
-  getAdapter (): Adapter {
+  private getAdapter (): Adapter {
     return this.deviceAdapter
   }
 
-  addAdapter (name: string, value: string): void {
+  private addAdapter (name: string, value: string): void {
     Object.defineProperty(this.availableAdapters, name, {
       value: value,
       enumerable: true
     })
   }
 
-  private async init (callback: { (): void; (): void }): Promise<void> {
+  private init (callback: { (): void; (): void }) {
     // Set debug
     this.setDebug(this.opts.debug)
 
@@ -101,7 +101,7 @@ export default class Server extends EventEmitter {
       // Pega o valor do arquivo do adaptador
       // const adapterFile: string = this.availableAdapters[this.opts.deviceAdapter]
 
-      const adapter = new Adapter(this.device)
+      const adapter = new Adapter()
 
       this.setAdapter(adapter)
     }
@@ -119,7 +119,7 @@ export default class Server extends EventEmitter {
     )
   }
 
-  doLog (msg: string | Uint8Array, from?: string): boolean {
+  private doLog (msg: string | Uint8Array, from?: string): boolean {
     // If debug is disabled, return false
     if (this.getDebug() === false) return false
 
@@ -142,7 +142,7 @@ export default class Server extends EventEmitter {
     return this.debug
   }
 
-  findDevice (deviceID: number): Device {
+  private findDevice (deviceID: number): Device {
     for (const i in this.devices) {
       const dev = this.devices[i].device
       if (dev.uid === deviceID) {
@@ -153,6 +153,10 @@ export default class Server extends EventEmitter {
 
   sendTo (deviceID: number, msg: Buffer, type: boolean): void {
     const dev = this.findDevice(deviceID)
+    if (!dev) {
+      console.log(`Device ${deviceID} not found. Please verify information`)
+      return
+    }
     dev.sendCommand(msg, type)
   }
 }
