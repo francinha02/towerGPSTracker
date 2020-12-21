@@ -93,7 +93,7 @@ export default class Device extends EventEmitter {
       case Control.heartbeat:
         this.receiveHeartbeat(msgParts)
         break
-      case Control.noop:
+      case Control.replied:
         this.runOther(msgParts.cmd, msgParts)
         break
     }

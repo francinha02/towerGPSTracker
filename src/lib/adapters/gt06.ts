@@ -78,6 +78,11 @@ class Adapter {
           parsed.cmd = Control.alert
           parsed.action = Control.alert
           break
+        case 0x15:
+          parsed.data = msg.slice(9, -8).toString()
+          parsed.cmd = Control.replied
+          parsed.action = Control.replied
+          break
         default:
           console.log({
             error: 'unknown message type',
@@ -119,7 +124,11 @@ class Adapter {
         eventStr = 'status'
         break
       case 0x16:
+      case 0x18:
         eventStr = 'alarm'
+        break
+      case 0x15:
+        eventStr = 'answer'
         break
       default:
         eventStr = 'unknown'
