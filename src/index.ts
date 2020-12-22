@@ -28,6 +28,10 @@ const serverGT06 = new Server(options, (device) => {
     console.log(heart)
     device.responsePacket(true, heart)
   })
+
+  device.on('warning', (e) => {
+    console.log(e)
+  })
 })
 
 serverGT06.setDebug(true)

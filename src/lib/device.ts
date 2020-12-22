@@ -9,10 +9,11 @@ import {
   ParseStatus
 } from './models/gt06'
 import * as f from './functions/functions'
+import Server from './server'
 
 export default class Device extends EventEmitter {
   private connection: Socket;
-  private server;
+  private server: Server;
   private adapter: Adapter;
   uid: number;
   ip: string;
@@ -20,7 +21,7 @@ export default class Device extends EventEmitter {
   private name: string | boolean;
   private logged: boolean;
 
-  constructor (adapter: Adapter, connection: Socket, gpsServer) {
+  constructor (adapter: Adapter, connection: Socket, gpsServer: Server) {
     super()
 
     this.connection = connection
@@ -37,36 +38,44 @@ export default class Device extends EventEmitter {
     RECEIVING DATA FROM THE DEVICE
     ****************************************/
     this.on('data', (data) => {
-      const msgParts = this.adapter.parseData(data)
+      try {
+        const msgParts = this.adapter.parseData(data)
 
-      if (!this.getUID() && typeof msgParts.deviceID === 'undefined') {
-        this.doLog(
-          "The adapter doesn't return the deviceID and is not defined\r\n"
-        )
+        msgParts.forEach((msg) => {
+          if (!this.getUID() && typeof msg.deviceID === 'undefined') {
+            this.doLog(
+              "The adapter doesn't return the deviceID and is not defined\r\n"
+            )
+          }
+
+          if (!msgParts) {
+            this.doLog(
+              `The message ('${data}' can't be parsed. Discarding...)\r\n`
+            )
+            return
+          }
+
+          if (typeof msg.cmd === 'undefined') {
+            this.doLog(
+              "The adapter doesn't return the command (cmd) parameter\r\n"
+            )
+          }
+
+          // If the UID of the devices it hasn't been configured, do it now.
+          if (!this.getUID()) {
+            this.setUID(msg.deviceID)
+          }
+
+          /************************************
+          EXECUTE ACTION
+          ************************************/
+          this.makeAction(msg.action, msg)
+        })
+
+        this.adapter.clearMsgBuffer()
+      } catch (e) {
+        console.log(e)
       }
-
-      if (!msgParts) {
-        this.doLog(
-          `The message ('${data}' can't be parsed. Discarding...)\r\n`
-        )
-        return
-      }
-
-      if (typeof msgParts.cmd === 'undefined') {
-        this.doLog(
-          "The adapter doesn't return the command (cmd) parameter\r\n"
-        )
-      }
-
-      // If the UID of the devices it hasn't been configured, do it now.
-      if (!this.getUID()) {
-        this.setUID(msgParts.deviceID)
-      }
-
-      /************************************
-      EXECUTE ACTION
-      ************************************/
-      this.makeAction(msgParts.action, msgParts)
     })
   }
 

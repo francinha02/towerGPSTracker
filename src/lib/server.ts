@@ -52,6 +52,10 @@ export default class Server extends EventEmitter {
           connection.device.emit('disconnected')
         })
 
+        connection.on('error', (e) => {
+          connection.device.emit('warning', e)
+        })
+
         callback(connection.device, connection)
 
         connection.device.emit('connected')
@@ -61,25 +65,25 @@ export default class Server extends EventEmitter {
   }
 
   //! SOME FUNCTIONS
-  private setAdapter (adapter: Adapter): void {
-    // if (typeof adapter !== 'function') {
-    //   throw new Error('The adapter needs an Adapter() method to start an instance of it')
-    // }
+  setAdapter (adapter: Adapter): void {
+    if (typeof adapter !== 'object') {
+      throw new Error('The adapter needs an Adapter() method to start an instance of it')
+    }
     this.deviceAdapter = adapter
   }
 
-  private getAdapter (): Adapter {
+  getAdapter (): Adapter {
     return this.deviceAdapter
   }
 
-  private addAdapter (name: string, value: string): void {
+  addAdapter (name: string, value: string): void {
     Object.defineProperty(this.availableAdapters, name, {
       value: value,
       enumerable: true
     })
   }
 
-  private init (callback: { (): void; (): void }) {
+  private init (callback: { (): void; (): void }): void {
     // Set debug
     this.setDebug(this.opts.debug)
 
@@ -119,7 +123,7 @@ export default class Server extends EventEmitter {
     )
   }
 
-  private doLog (msg: string | Uint8Array, from?: string): boolean {
+  doLog (msg: string | Uint8Array, from?: string | number): boolean {
     // If debug is disabled, return false
     if (this.getDebug() === false) return false
 

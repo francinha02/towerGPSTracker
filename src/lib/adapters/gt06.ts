@@ -28,7 +28,7 @@ class Adapter {
     this.__count = 1
   }
 
-  parseData (data: Buffer): ParsedMsg {
+  parseData (data: Buffer): ParsedMsg[] {
     const parsed: ParsedMsg = {
       expectsResponse: false,
       deviceID: null,
@@ -100,7 +100,7 @@ class Adapter {
       }
       this.msgBuffer.push(parsed)
     })
-    return parsed
+    return this.msgBuffer
   }
 
   clearMsgBuffer (): void {
