@@ -1,10 +1,11 @@
 import { EventEmitter } from 'events'
-import net, { Socket } from 'net'
 import fs from 'fs/promises'
+import net, { Socket } from 'net'
 import path from 'path'
+
+import { Adapter, modelName } from './adapters/gt06'
 import Device from './device'
 import { Options } from './models/server'
-import { Adapter, modelName } from './adapters/gt06'
 
 export default class Server extends EventEmitter {
   private opts: Options;

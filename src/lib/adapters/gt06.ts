@@ -1,21 +1,9 @@
-import {
-  Control,
-  CourseStatus,
-  Event,
-  LanguagePack,
-  ParseAlarm,
-  ParsedMsg,
-  ParseLocation,
-  ParseLogin,
-  ParseStatus,
-  TerminalInformation
-} from '../models/gt06'
-import * as f from '../functions/functions'
 import crc16 from '../functions/crc16'
-
-const protocol = 'GT06'
-const modelName = 'GT06'
+import * as f from '../functions/functions'
+import { Control, CourseStatus, Event, LanguagePack, ParseAlarm, ParsedMsg, ParseLocation, ParseLogin, ParseStatus, TerminalInformation } from '../models/gt06'
 const compatibleHardware = ['GT06/supplier']
+const modelName = 'GT06'
+const protocol = 'GT06'
 
 class Adapter {
   private __count: number;
