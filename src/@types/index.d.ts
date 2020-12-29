@@ -5,3 +5,10 @@ declare module 'net' {
         device: Device
     }
 }
+
+declare module 'express' {
+    export interface Request {
+        IsRoot: boolean,
+        userAuth: string | Record<string>
+    }
+}

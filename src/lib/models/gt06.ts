@@ -86,7 +86,7 @@ export interface ParsedMsg {
   expectsResponse: boolean;
   deviceID: number;
   parseTime: number;
-  event: Event;
+  event: string;
   responseMsg: Buffer;
   cmd: string;
   action: string;

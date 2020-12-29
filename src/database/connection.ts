@@ -1,21 +1,21 @@
 import { createConnection } from 'typeorm'
 
+import { User } from './entity/User'
+
 const config = require('../../ormconfig.json')
 
 export default {
   createConnection: async () => {
-    await createConnection(
-      {
-        type: config.type,
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-        database: config.database,
-        synchronize: false,
-        logging: false,
-        entities: []
-      }
-    )
+    await createConnection({
+      type: config.type,
+      host: config.host,
+      port: config.webPort,
+      username: config.username,
+      password: config.password,
+      database: config.database,
+      synchronize: false,
+      logging: false,
+      entities: [User]
+    })
   }
 }

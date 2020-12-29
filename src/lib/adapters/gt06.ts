@@ -1,6 +1,6 @@
 import crc16 from '../functions/crc16'
 import * as f from '../functions/functions'
-import { Control, CourseStatus, Event, LanguagePack, ParseAlarm, ParsedMsg, ParseLocation, ParseLogin, ParseStatus, TerminalInformation } from '../models/gt06'
+import { Control, CourseStatus, LanguagePack, ParseAlarm, ParsedMsg, ParseLocation, ParseLogin, ParseStatus, TerminalInformation } from '../models/gt06'
 const compatibleHardware = ['GT06/supplier']
 const modelName = 'GT06'
 const protocol = 'GT06'
@@ -21,10 +21,7 @@ class Adapter {
       expectsResponse: false,
       deviceID: null,
       parseTime: Date.now(),
-      event: {
-        number: 0,
-        string: ''
-      },
+      event: '',
       data: '',
       responseMsg: Buffer.from('787805FFFFFFFFFF0d0a', 'hex'),
       action: '',
@@ -37,8 +34,8 @@ class Adapter {
 
     this.msgBufferRaw = Adapter.sliceMsgsInBuff(data).slice()
     this.msgBufferRaw.forEach((msg, idx) => {
-      switch (Adapter.selectEvent(msg).number) {
-        case 0x01: // login message
+      switch (Adapter.selectEvent(msg)) {
+        case Control.loginRequest: // login message
           parsed.data = Adapter.parseLogin(msg)
           parsed.expectsResponse = true
           parsed.deviceID = Adapter.parseLogin(msg).imei
@@ -46,27 +43,26 @@ class Adapter {
           parsed.cmd = Control.loginRequest
           parsed.action = Control.loginRequest
           break
-        case 0x12:
+        case Control.ping:
           parsed.data = Adapter.parseLocation(msg)
           parsed.cmd = Control.ping
           parsed.action = Control.ping
           break
-        case 0x13: // status message
+        case Control.heartbeat: // status message
           parsed.data = Adapter.parseStatus(msg)
           parsed.expectsResponse = true
           parsed.responseMsg = this.createResponse(msg)
           parsed.cmd = Control.heartbeat
           parsed.action = Control.heartbeat
           break
-        case 0x16:
-        case 0x18:
+        case Control.alert:
           parsed.data = Adapter.parseAlarm(msg)
           parsed.expectsResponse = true
           parsed.responseMsg = this.createResponse(msg)
           parsed.cmd = Control.alert
           parsed.action = Control.alert
           break
-        case 0x15:
+        case Control.replied:
           parsed.data = msg.slice(9, -8).toString()
           parsed.cmd = Control.replied
           parsed.action = Control.replied
@@ -99,30 +95,30 @@ class Adapter {
     return header.equals(Buffer.from('7878', 'hex'))
   }
 
-  private static selectEvent (data: Buffer): Event {
+  private static selectEvent (data: Buffer): string {
     let eventStr: string
     switch (data[3]) {
       case 0x01:
-        eventStr = 'login'
+        eventStr = Control.loginRequest
         break
       case 0x12:
-        eventStr = 'location'
+        eventStr = Control.ping
         break
       case 0x13:
-        eventStr = 'status'
+        eventStr = Control.heartbeat
         break
       case 0x16:
       case 0x18:
-        eventStr = 'alarm'
+        eventStr = Control.alert
         break
       case 0x15:
-        eventStr = 'answer'
+        eventStr = Control.replied
         break
       default:
-        eventStr = 'unknown'
+        eventStr = Control.noop
         break
     }
-    return { number: data[3], string: eventStr }
+    return eventStr
   }
 
   private static sliceMsgsInBuff (data: Buffer): Array<Buffer> {
