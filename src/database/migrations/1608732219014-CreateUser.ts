@@ -22,12 +22,12 @@ export class CreateUser1608732219014 implements MigrationInterface {
           default: false
         },
         {
-          name: 'create_at',
+          name: 'createAt',
           type: 'timestamp',
           default: 'now()'
         },
         {
-          name: 'update_at',
+          name: 'updateAt',
           type: 'timestamp',
           default: 'now()'
         },
@@ -40,7 +40,7 @@ export class CreateUser1608732219014 implements MigrationInterface {
           type: 'varchar'
         },
         {
-          name: 'is_root',
+          name: 'isRoot',
           type: 'boolean',
           default: false
         },

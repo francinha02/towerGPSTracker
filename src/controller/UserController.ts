@@ -1,6 +1,6 @@
+import bcrypt from 'bcrypt'
 import { Request } from 'express'
 import { sign, SignOptions } from 'jsonwebtoken'
-import md5 from 'md5'
 
 import config from '../config/config'
 import { User } from '../database/entity/User'
@@ -22,9 +22,17 @@ export class UserController extends BaseController<User> {
     }
 
     const user = await this.repository.findOne({
-      username,
-      password: md5(password)
+      username
     })
+
+    const comparePass = await bcrypt.compare(password, user.password)
+
+    if (!comparePass) {
+      return {
+        status: 404,
+        errors: ['Nome de usuário e/ou senha inválidos']
+      }
+    }
 
     if (user) {
       // PRIVATE and PUBLIC key
@@ -66,13 +74,7 @@ export class UserController extends BaseController<User> {
   }
 
   async createUser (request: Request) {
-    const {
-      name,
-      username,
-      isRoot,
-      password,
-      confirmPassword
-    } = request.body
+    const { name, username, isRoot, password, confirmPassword } = request.body
     super.isRequired(name, 'Informe o nome')
     super.isRequired(username, 'Informe o nome de usuário')
     super.isRequired(password, 'Informe a senha')
@@ -88,7 +90,16 @@ export class UserController extends BaseController<User> {
       }
     }
 
-    if (password) _user.password = md5(password)
+    const verifyUsername = await this.repository.findOne({ username })
+
+    if (verifyUsername) {
+      return {
+        status: 400,
+        errors: ['Usuário já cadastrado no banco de dados.']
+      }
+    }
+
+    if (password) _user.password = await bcrypt.hash(password, 15)
     _user.isRoot = isRoot
 
     return super.save(_user, request)
