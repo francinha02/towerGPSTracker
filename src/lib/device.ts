@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events'
 import { AddressInfo, Socket } from 'net'
 
-import { Adapter } from './adapters/gt06'
 import * as f from './functions/functions'
+import { Adapter } from './models/adapter'
 import { Control, ParseAlarm, ParsedMsg, ParseLocation, ParseStatus } from './models/gt06'
 import Server from './server'
 
@@ -74,7 +74,7 @@ export default class Device extends EventEmitter {
     })
   }
 
-  private makeAction (action: string, msgParts: ParsedMsg) {
+  private makeAction (action: string, msgParts: ParsedMsg): boolean {
     // If we're not logged
     if (action !== Control.loginRequest && !this.logged) {
       // this.adapter.requestLoginToDevice()

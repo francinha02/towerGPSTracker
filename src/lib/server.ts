@@ -1,26 +1,27 @@
 import { EventEmitter } from 'events'
 import fs from 'fs/promises'
-import net, { Socket } from 'net'
+import net, { Socket, createServer } from 'net'
 import path from 'path'
 
-import { Adapter, modelName } from './adapters/gt06'
 import Device from './device'
+import { Adapter } from './models/adapter'
 import { Options } from './models/server'
 
 export default class Server extends EventEmitter {
   private opts: Options;
-  private callback: (device: Device, connection: net.Socket) => void;
+  private callback: { (device: Device, connection: Socket): void }
   private devices: Socket[];
   private device: Device;
   private server: net.Server;
   private debug: boolean;
-  private availableAdapters: { [x: string]: string; GT02D?: string };
+  private availableAdapters: { GT06?: string; SUNTECH?: string };
   private deviceAdapter: Adapter;
-  private defaults: Options = {
-    debug: false,
-    port: 2790,
-    deviceAdapter: false
-  };
+  private defaults: Options =
+    {
+      debug: false,
+      port: 2790,
+      deviceAdapter: false
+    };
 
   constructor (
     opts: Options,
@@ -32,10 +33,13 @@ export default class Server extends EventEmitter {
 
     this.opts = Object.assign(this.defaults, opts)
     this.devices = []
-    this.availableAdapters = { GT02D: './adapters/gt06' }
+    this.availableAdapters = {
+      GT06: './adapters/gt06',
+      SUNTECH: './adapters/suntech'
+    }
 
     this.init(() => {
-      this.server = net.createServer((connection: net.Socket) => {
+      this.server = createServer((connection: Socket) => {
         const adapter = this.getAdapter()
         // We create an new device and give the an adapter to parse the incoming messages
         connection.device = new Device(adapter, connection, this)
@@ -44,31 +48,34 @@ export default class Server extends EventEmitter {
 
         // Once we receive data...
         connection.on('data', (data) => {
-          connection.device.emit('data', data)
+          this.device.emit('data', data)
         })
 
         // Remove the device from the list when it leaves
         connection.on('end', () => {
           this.devices.splice(this.devices.indexOf(connection), 1)
-          connection.device.emit('disconnected')
+          this.device.emit('disconnected')
         })
 
         connection.on('error', (e) => {
-          connection.device.emit('warning', e)
+          this.device.emit('warning', e)
         })
 
-        callback(connection.device, connection)
+        this.callback(connection.device, connection)
 
-        connection.device.emit('connected')
+        this.device.emit('connected')
       })
     })
-    this.server.listen(opts.port, process.env.HOST)
+
+    this.server.listen(this.opts.port, process.env.HOST)
   }
 
   //! SOME FUNCTIONS
   setAdapter (adapter: Adapter): void {
     if (typeof adapter !== 'object') {
-      throw new Error('The adapter needs an Adapter() method to start an instance of it')
+      throw new Error(
+        'The adapter needs an Adapter() method to start an instance of it'
+      )
     }
     this.deviceAdapter = adapter
   }
@@ -86,6 +93,7 @@ export default class Server extends EventEmitter {
 
   private init (callback: { (): void; (): void }): void {
     // Set debug
+
     this.setDebug(this.opts.debug)
 
     //! DEVICE ADAPTER INITIALIZATION
@@ -99,28 +107,30 @@ export default class Server extends EventEmitter {
       // Verifica se o modelo selecionado tem um adaptador disponível.
       if (!this.availableAdapters[this.opts.deviceAdapter]) {
         this.doLog(
-          `The class adapter for ${this.opts.deviceAdapter} doesn't exist or is null\r\n`
+            `The class adapter for ${this.opts.deviceAdapter} doesn't exist or is null\r\n`
         )
       }
 
       // Pega o valor do arquivo do adaptador
-      // const adapterFile: string = this.availableAdapters[this.opts.deviceAdapter]
+      // const adapterFile: string = this.availableAdapters[op.deviceAdapter]
 
-      const adapter = new Adapter()
+      const adapterFile = this.availableAdapters[this.opts.deviceAdapter]
 
-      this.setAdapter(adapter)
+      import(adapterFile)
+        .then((obj) => {
+          const adapter = new obj.Adapter()
+          this.setAdapter(adapter)
+        })
+        .catch((err) => console.log(err))
     }
-    // else {
-    //   // IF THE APP PASS THE ADEPTER DIRECTLY
-    //   this.setAdapter(this.opts.deviceAdapter)
-    // }
+
     this.emit('before_init')
     if (typeof callback === 'function') callback()
     this.emit('init')
 
     // FINAL INIT MESSAGE
     console.log(
-      `\nGPS LISTENER running at port ${this.opts.port} EXPECTING DEVICE MODEL: ${modelName}`
+        `\nGPS LISTENER running at port ${this.opts.port} EXPECTING DEVICE MODEL: ${this.opts.deviceAdapter}`
     )
   }
 

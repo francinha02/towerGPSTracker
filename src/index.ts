@@ -4,7 +4,7 @@ import * as bodyParser from 'body-parser'
 import cors from 'cors'
 import express, { Request, Response } from 'express'
 import helmet from 'helmet'
-import net from 'net'
+import { createServer } from 'net'
 
 import config from './config/config'
 import connection from './database/connection'
@@ -63,40 +63,50 @@ app.listen(config.webPort, '0.0.0.0', async () => {
   }
 })
 
-const options: Options = {
-  debug: true,
-  deviceAdapter: 'GT02D',
-  port: 2790
-}
+const options: Options[] = [
+  {
+    debug: true,
+    deviceAdapter: 'GT06',
+    port: 2790
+  },
+  {
+    debug: true,
+    deviceAdapter: 'SUNTECH',
+    port: 2791
+  }
+]
+let server: Server
 
-const serverGT06 = new Server(options, (device) => {
-  device.on(Control.loginRequest, (deviceID, msgParts) => {
-    device.loginAuthorized(true, msgParts)
-    console.log(deviceID, msgParts)
+options.forEach((opts) => {
+  server = new Server(opts, (device) => {
+    device.on(Control.loginRequest, (deviceID, msgParts) => {
+      device.loginAuthorized(true, msgParts)
+      console.log(deviceID, msgParts)
+    })
+
+    device.on(Control.ping, (gpsData) => {
+      console.log(gpsData)
+    })
+
+    device.on(Control.alert, (alert) => {
+      console.log(alert)
+      device.responsePacket(true, alert)
+    })
+
+    device.on(Control.heartbeat, (heart) => {
+      console.log(heart)
+      device.responsePacket(true, heart)
+    })
+
+    device.on('warning', (e) => {
+      console.log(e)
+    })
   })
 
-  device.on(Control.ping, (gpsData) => {
-    console.log(gpsData)
-  })
-
-  device.on(Control.alert, (alert) => {
-    console.log(alert)
-    device.responsePacket(true, alert)
-  })
-
-  device.on(Control.heartbeat, (heart) => {
-    console.log(heart)
-    device.responsePacket(true, heart)
-  })
-
-  device.on('warning', (e) => {
-    console.log(e)
-  })
+  server.setDebug(true)
 })
 
-serverGT06.setDebug(true)
-
-const clientServer = net.createServer((socket) => {
+const clientServer = createServer((socket) => {
   const parts = {
     start: '',
     cmd: null,
@@ -118,11 +128,11 @@ const clientServer = net.createServer((socket) => {
     }
     console.log(parts.start, parts.cmd, parts.deviceID)
     try {
-      serverGT06.sendTo(parts.deviceID, Buffer.from(parts.cmd), true)
+      server.sendTo(parts.deviceID, Buffer.from(parts.cmd), true)
     } catch (e) {
       console.log(e)
     }
   })
 })
 
-clientServer.listen(2791, process.env.HOST)
+clientServer.listen(2792, process.env.HOST)
