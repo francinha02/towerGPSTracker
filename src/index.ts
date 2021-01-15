@@ -2,7 +2,7 @@ import 'reflect-metadata'
 
 import * as bodyParser from 'body-parser'
 import cors from 'cors'
-import express, { Request, Response } from 'express'
+import express, { NextFunction, Request, Response } from 'express'
 import helmet from 'helmet'
 import { createServer } from 'net'
 
@@ -27,8 +27,7 @@ app.use(auth)
 Routes.forEach((route) => {
   (app as any)[route.method](
     route.route,
-    // eslint-disable-next-line @typescript-eslint/ban-types
-    (req: Request, res: Response, next: Function) => {
+    (req: Request, res: Response, next: NextFunction) => {
       const result = new (route.controller as any)()[route.action](
         req,
         res,

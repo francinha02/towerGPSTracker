@@ -21,23 +21,28 @@ export abstract class BaseController<T> extends BaseNotification {
     return this._onlyRootController && !request.IsRoot
   }
 
-  async all (request: Request) {
+  async all (request: Request, selector: any[]) {
     return this.checkNotPermission(request)
       ? this.errorRoot
       : this._repository.find({
         where: {
           deleted: false
-        }
+        },
+        select: selector
       })
   }
 
-  async one (request: Request) {
-    const model = await this._repository.findOne(request.params.id)
+  async one (request: Request, selector: any[]) {
+    const model = await this._repository.findOne(request.params.id, {
+      select: selector
+    })
 
-    return model || {
-      status: 404,
-      errors: ['Item não encontrado no bando de dados.']
-    }
+    return (
+      model || {
+        status: 404,
+        errors: ['Item não encontrado no bando de dados.']
+      }
+    )
   }
 
   async save (model: any, request: Request, relations?: Array<string>) {

@@ -20,24 +20,19 @@ export class UserController extends BaseController<User> {
         errors: ['Informe o nome de usuário e a senha para efetuar o login']
       }
     }
-
-    const user = await this.repository.findOne({
-      username
-    })
-
-    const comparePass = await bcrypt.compare(password, user.password)
-
-    if (!comparePass) {
-      return {
-        status: 404,
-        errors: ['Nome de usuário e/ou senha inválidos']
-      }
-    }
+    const user = await this.repository.findOne({ username })
 
     if (user) {
+      const comparePass = await bcrypt.compare(password, user.password)
+
+      if (!comparePass) {
+        return {
+          status: 404,
+          errors: ['Nome de usuário e/ou senha inválidos']
+        }
+      }
       // PRIVATE and PUBLIC key
       const _privateKey = config.privateKey
-
       // PAYLOAD
       const _payload = {
         id: user.id,
@@ -51,6 +46,7 @@ export class UserController extends BaseController<User> {
         algorithm: 'RS256',
         expiresIn: '1h'
       }
+
       return {
         status: 200,
         message: {
@@ -99,17 +95,21 @@ export class UserController extends BaseController<User> {
       }
     }
 
-    if (password) _user.password = await bcrypt.hash(password, 15)
+    if (password) _user.password = await bcrypt.hash(password, 10)
     _user.isRoot = isRoot
 
     return super.save(_user, request)
   }
 
-  async save (request: Request) {
-    const _user = <User>request.body
-    super.isRequired(_user.name, 'O nome é obrigatório')
-    super.isRequired(_user.username, 'O nome de usuário é obrigatório')
-    super.isRequired(_user.password, 'A senha do usuário é obrigatória')
-    return super.save(_user, request)
+  async listAll (request: Request) {
+    const selector = ['id', 'name', 'username']
+    const users = await this.all(request, selector)
+    return users
+  }
+
+  async oneById (request: Request) {
+    const selector = ['id', 'name', 'username']
+    const user = await this.one(request, selector)
+    return user
   }
 }
