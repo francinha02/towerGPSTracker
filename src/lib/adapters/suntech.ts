@@ -1,10 +1,24 @@
 // import crc16 from '../functions/crc16'
+// import { Position } from '../models/suntech'
+
+import Device from '../device'
+import { UnitsConverter } from '../helpers/UnitsConverter'
+import { Position } from '../models/Position'
+
 // import * as f from '../functions/functions'
 const compatibleHardware = ['SUNTECH/supplier']
 const modelName = 'SUNTECH'
 const protocol = 'SUNTECH'
 
 class Adapter {
+  private prefix: string;
+  private device: Device;
+  private protocolType: number;
+  private hbm: boolean;
+  private includeAdc: boolean;
+  private includeRpm: boolean;
+  private includeTemp: boolean;
+
   private __count: number;
   private msgBufferRaw: any[];
   private msgBuffer: any[];
@@ -15,8 +29,312 @@ class Adapter {
     this.__count = 1
   }
 
-  parseData (data) {
-    console.log(data)
+  getPrefix (): string {
+    return this.prefix
+  }
+
+  setProtocolType (protocolType: number): void {
+    this.protocolType = protocolType
+  }
+
+  getProtocolType (deviceId: number): number {
+    // TODO
+    return deviceId
+  }
+
+  setHbm (hbm: boolean): void {
+    this.hbm = hbm
+  }
+
+  isHbm (type: string, length: number): boolean {
+    console.log(type, length)
+    if ((type === 'STT' || type === 'UEX') && length > 18) return true
+    if ((type === 'EMG' || type === 'EVT' || type === 'ALT') && length > 17) return true
+    else return false
+  }
+
+  setIncludeAdc (includeAdc: boolean): void {
+    this.includeAdc = includeAdc
+  }
+
+  isIncludeAdc (deviceId: number): boolean {
+    deviceId ? this.setIncludeAdc(true) : this.setIncludeAdc(false)
+    return this.includeAdc
+  }
+
+  setIncludeRpm (includeRpm: boolean): void {
+    this.includeRpm = includeRpm
+  }
+
+  isIncludeRpm (deviceId: number): boolean {
+    return !!deviceId
+  }
+
+  setIncludeTemp (includeTemp: boolean): void {
+    this.includeTemp = includeTemp
+  }
+
+  isIncludeTemp (deviceId: number): boolean {
+    return !!deviceId
+  }
+
+  private decodeEmergency (value: number): string {
+    switch (value) {
+      case 1:
+        return Position.ALARM_SOS
+      case 2:
+        return Position.ALARM_PARKING
+      case 3:
+        return Position.ALARM_POWER_CUT
+      case 5:
+      case 6:
+        return Position.ALARM_DOOR
+      case 7:
+        return Position.ALARM_MOVEMENT
+      case 8:
+        return Position.ALARM_SHOCK
+      default:
+        return null
+    }
+  }
+
+  private decodeAlert (value: number): string {
+    switch (value) {
+      case 1:
+        return Position.ALARM_OVERSPEED
+      case 5:
+        return Position.ALARM_GEOFENCE_EXIT
+      case 6:
+        return Position.ALARM_GEOFENCE_ENTER
+      case 14:
+        return Position.ALARM_LOW_BATTERY
+      case 15:
+        return Position.ALARM_SHOCK
+      case 16:
+        return Position.ALARM_ACCIDENT
+      case 40:
+        return Position.ALARM_POWER_RESTORED
+      case 41:
+        return Position.ALARM_POWER_CUT
+      case 46:
+        return Position.ALARM_ACCELERATION
+      case 47:
+        return Position.ALARM_BRAKING
+      case 50:
+        return Position.ALARM_JAMMING
+      default:
+        return null
+    }
+  }
+
+  private decode2356 (protocol: string, values: string[]) {
+    let index = 0
+    const type: string = values[index++].substring(5)
+
+    if (
+      !(type === 'STT') &&
+      !(type === 'EMG') &&
+      !(type === 'EVT') &&
+      !(type === 'ALT') &&
+      !(type === 'UEX')
+    ) {
+      return null
+    }
+
+    const position: Position = new Position(protocol)
+    position.setDeviceId(parseInt(values[index++]))
+    position.set(Position.KEY_TYPE, type)
+
+    if (
+      protocol.startsWith('ST3') ||
+      protocol === 'ST500' ||
+      protocol === 'ST600'
+    ) {
+      index += 1 // model
+    }
+
+    position.set(Position.KEY_VERSION_FW, values[index++])
+    index++
+    index++
+
+    // TODO A FUNCTION TO PARSE DATE AND TIME //
+    const y = parseInt(values[4].substring(0, 4))
+    const M = parseInt(values[4].substring(4, 6))
+    const d = parseInt(values[4].substring(6, 8))
+    const h = parseInt(values[5].substring(0, 2))
+    const m = parseInt(values[5].substring(3, 5))
+    const s = parseInt(values[5].substring(6, 8))
+    const dateFormat = new Date(y, M, d, h, m, s)
+    position.setTime(dateFormat)
+
+    if (protocol !== 'ST500') {
+      const cid: number = parseInt(values[index++])
+      if (protocol === 'ST600') {
+        position.setNetwork(cid)
+        index++
+        index++
+        index++
+        index++
+      }
+    }
+    position.setLatitude(parseFloat(values[index++]))
+    position.setLongitude(parseFloat(values[index++]))
+    position.setSpeed(parseInt(values[index++]))
+    position.setCourse(parseInt(values[index++]))
+
+    position.set(Position.KEY_SATELLITES, parseInt(values[index++]))
+
+    position.setValid(values[index++] === '1')
+
+    position.set(Position.KEY_ODOMETER, parseInt(values[index++]))
+    position.set(Position.KEY_POWER, parseFloat(values[index++]))
+
+    const io: string = values[index++]
+
+    if (io.length >= 6) {
+      position.set(Position.KEY_IGNITION, io.charAt(0) === '1')
+      position.set(Position.PREFIX_IN + 1, io.charAt(1) === '1')
+      position.set(Position.PREFIX_IN + 2, io.charAt(2) === '1')
+      position.set(Position.PREFIX_IN + 3, io.charAt(3) === '1')
+      position.set(Position.PREFIX_OUT + 1, io.charAt(4) === '1')
+      position.set(Position.PREFIX_OUT + 2, io.charAt(5) === '1')
+    }
+
+    switch (type) {
+      case 'STT':
+        position.set(Position.KEY_STATUS, parseInt(values[index++]))
+        position.set(Position.KEY_INDEX, parseInt(values[index++]))
+        break
+      case 'EMG':
+        position.set(Position.KEY_ALARM, this.decodeEmergency(parseInt(values[index++])))
+        break
+      case 'EVT':
+        position.set(Position.KEY_EVENT, parseInt(values[index++]))
+        break
+      case 'ALT':
+        position.set(Position.KEY_ALARM, this.decodeAlert(parseInt(values[index++])))
+        break
+      case 'UEX':
+        this.decodeUex(position, parseInt(values[index++]), values[index++])
+        index += 1
+        break
+      default:
+        break
+    }
+
+    if (this.isHbm(type, values.length)) {
+      if (index < values.length) {
+        position.set(Position.KEY_HOURS, UnitsConverter.msFromMinutes(parseInt(values[index++])))
+      }
+
+      if (index < values.length) {
+        position.set(Position.KEY_BATTERY, parseFloat(values[index++]))
+      }
+
+      if (index < values.length && values[index++] === '0') {
+        console.log('KEY_ARCHIVE')
+        position.set(Position.KEY_ARCHIVE, true)
+      }
+
+      // if (this.isIncludeAdc(deviceSession.uid)) {
+      //   for (let i = 1; i <= 3; i++) {
+      //     if (index < values.length && !values[index++]) {
+      //       position.set(Position.PREFIX_ADC + i, parseFloat(values[index - 1]))
+      //     }
+      //   }
+      // }
+
+      // if (this.isIncludeRpm(parseInt(deviceId))) {
+      //   position.set(Position.KEY_RPM, parseInt(values[index++]))
+      // }
+
+      // if (values.length - index >= 2) {
+      //   const driverUniqueId: string = values[index++]
+      //   if (values[index++] === '1' && !driverUniqueId) {
+      //     position.set(Position.KEY_DRIVER_UNIQUE_ID, driverUniqueId)
+      //   }
+      // }
+
+      // if (this.isIncludeTemp(parseInt(deviceId))) {
+      //   for (let i = 0; i <= 3; i++) {
+      //     const temperature: string = values[index++]
+      //     const value: string = temperature.substring(temperature.indexOf(':') + 1)
+      //     if (!value) {
+      //       position.set(Position.PREFIX_TEMP + i, parseFloat(value))
+      //     }
+      //   }
+      // }
+    }
+
+    return position
+  }
+
+  private decodeUex (position: Position, value1: number, value2: string) {
+    let remaining: number = value1
+    let totalFuel = 0
+    while (remaining > 0) {
+      const attribute = value2
+      if (attribute.startsWith('CabAVL')) {
+        const data: string[] = attribute.split(';')
+        const fuel1: number = parseFloat(data[2])
+        if (fuel1 > 0) {
+          totalFuel += fuel1
+          position.set('fuel1', fuel1)
+        }
+        const fuel2: number = parseFloat(data[3])
+        if (fuel2 > 0) {
+          totalFuel += fuel2
+          position.set('fuel2', fuel2)
+        }
+      } else {
+        const pair: string[] = attribute.split('=')
+        if (pair.length >= 2) {
+          let value: string = pair[1].trim()
+          if (value.includes('.')) {
+            value = value.substring(0, value.indexOf('.'))
+          }
+          let fuel: number
+          switch (pair[0].charAt(0)) {
+            case 't':
+              position.set(Position.PREFIX_TEMP + pair[0].charAt(2), parseInt(value, 16))
+              break
+            case 'N':
+              fuel = parseInt(value, 16)
+              totalFuel += fuel
+              position.set('fuel' + pair[0].charAt(2), fuel)
+              break
+            case 'Q':
+              position.set('drivingQuality', parseInt(value, 16))
+              break
+            default:
+              break
+          }
+        }
+      }
+      remaining -= attribute.length + 1
+    }
+    if (totalFuel > 0) {
+      position.set(Position.KEY_FUEL_LEVEL, totalFuel)
+    }
+  }
+
+  parseData (data: Buffer) {
+    const values: string[] = data.toString().split(';')
+
+    this.prefix = values[0]
+
+    if (this.prefix.length < 5) {
+      console.log('decodeUniversal')
+    } else if (this.prefix.endsWith('HTE')) {
+      console.log('decodeTravelReport')
+    } else if (this.prefix.startsWith('ST9')) {
+      console.log('decode9')
+    } else if (this.prefix.startsWith('ST4')) {
+      console.log('decode4')
+    } else {
+      console.log(this.decode2356(this.prefix.substring(0, 5), values))
+    }
+
     this.msgBuffer.push(data)
 
     return this.msgBuffer
@@ -28,3 +346,11 @@ class Adapter {
 }
 
 export { protocol, modelName, compatibleHardware, Adapter }
+
+const adt = new Adapter()
+const data =
+  'ST300STT;511009943;40;319H;20110102;00:07:02;500509;-03.858850;-038.494265;000.000;000.00;0;0;2801;28.39;100000;2;0005;000145;0.0;1\r'
+
+const buffer = Buffer.from(data, 'utf8')
+
+adt.parseData(buffer)
