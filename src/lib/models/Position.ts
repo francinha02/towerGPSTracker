@@ -1,3 +1,5 @@
+import { DateTime } from 'luxon'
+
 import { Message } from './Message'
 
 export class Position extends Message {
@@ -141,7 +143,8 @@ export class Position extends Message {
   constructor (protocol: string) {
     super()
     this.protocol = protocol
-    this.serverTime = new Date()
+    this.serverTime = DateTime.local().toJSDate()
+    console.log(DateTime.local().toJSDate())
   }
 
   public getProtocol (): string {

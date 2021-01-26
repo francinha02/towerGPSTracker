@@ -2,8 +2,10 @@
 // import { Position } from '../models/suntech'
 
 import Device from '../device'
+import { DateFormat } from '../helpers/DateFormat'
 import { UnitsConverter } from '../helpers/UnitsConverter'
 import { Position } from '../models/Position'
+import { TimeZone } from '../models/Timezone'
 
 // import * as f from '../functions/functions'
 const compatibleHardware = ['SUNTECH/supplier']
@@ -47,7 +49,6 @@ class Adapter {
   }
 
   isHbm (type: string, length: number): boolean {
-    console.log(type, length)
     if ((type === 'STT' || type === 'UEX') && length > 18) return true
     if ((type === 'EMG' || type === 'EVT' || type === 'ALT') && length > 17) return true
     else return false
@@ -67,7 +68,8 @@ class Adapter {
   }
 
   isIncludeRpm (deviceId: number): boolean {
-    return !!deviceId
+    deviceId ? this.setIncludeRpm(true) : this.setIncludeRpm(false)
+    return this.includeRpm
   }
 
   setIncludeTemp (includeTemp: boolean): void {
@@ -75,7 +77,8 @@ class Adapter {
   }
 
   isIncludeTemp (deviceId: number): boolean {
-    return !!deviceId
+    deviceId ? this.setIncludeTemp(true) : this.setIncludeTemp(false)
+    return this.includeTemp
   }
 
   private decodeEmergency (value: number): string {
@@ -132,11 +135,11 @@ class Adapter {
     const type: string = values[index++].substring(5)
 
     if (
-      !(type === 'STT') &&
-      !(type === 'EMG') &&
-      !(type === 'EVT') &&
-      !(type === 'ALT') &&
-      !(type === 'UEX')
+      (type !== 'STT') &&
+      (type !== 'EMG') &&
+      (type !== 'EVT') &&
+      (type !== 'ALT') &&
+      (type !== 'UEX')
     ) {
       return null
     }
@@ -154,18 +157,11 @@ class Adapter {
     }
 
     position.set(Position.KEY_VERSION_FW, values[index++])
-    index++
-    index++
 
-    // TODO A FUNCTION TO PARSE DATE AND TIME //
-    const y = parseInt(values[4].substring(0, 4))
-    const M = parseInt(values[4].substring(4, 6))
-    const d = parseInt(values[4].substring(6, 8))
-    const h = parseInt(values[5].substring(0, 2))
-    const m = parseInt(values[5].substring(3, 5))
-    const s = parseInt(values[5].substring(6, 8))
-    const dateFormat = new Date(y, M, d, h, m, s)
-    position.setTime(dateFormat)
+    const dateFormat = new DateFormat()
+    dateFormat.setTimeZone('GMT')
+    position.setTime(dateFormat.parse(values[index++], values[index++]))
+    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
 
     if (protocol !== 'ST500') {
       const cid: number = parseInt(values[index++])
@@ -177,6 +173,7 @@ class Adapter {
         index++
       }
     }
+
     position.setLatitude(parseFloat(values[index++]))
     position.setLongitude(parseFloat(values[index++]))
     position.setSpeed(parseInt(values[index++]))
@@ -221,7 +218,7 @@ class Adapter {
       default:
         break
     }
-
+    console.log(values.length, index)
     if (this.isHbm(type, values.length)) {
       if (index < values.length) {
         position.set(Position.KEY_HOURS, UnitsConverter.msFromMinutes(parseInt(values[index++])))
@@ -232,38 +229,42 @@ class Adapter {
       }
 
       if (index < values.length && values[index++] === '0') {
-        console.log('KEY_ARCHIVE')
         position.set(Position.KEY_ARCHIVE, true)
       }
 
-      // if (this.isIncludeAdc(deviceSession.uid)) {
-      //   for (let i = 1; i <= 3; i++) {
-      //     if (index < values.length && !values[index++]) {
-      //       position.set(Position.PREFIX_ADC + i, parseFloat(values[index - 1]))
-      //     }
-      //   }
-      // }
+      if (this.isIncludeAdc(position.getDeviceId())) {
+        for (let i = 1; i <= 3; i++) {
+          if (index < values.length && !values[index++]) {
+            position.set(Position.PREFIX_ADC + i, parseFloat(values[index - 1]))
+          }
+        }
+      }
 
-      // if (this.isIncludeRpm(parseInt(deviceId))) {
-      //   position.set(Position.KEY_RPM, parseInt(values[index++]))
-      // }
+      if (this.isIncludeRpm(position.getDeviceId())) {
+        const value = values[index++]
+        if (value) {
+          position.set(Position.KEY_RPM, parseInt(value))
+        }
+      }
 
-      // if (values.length - index >= 2) {
-      //   const driverUniqueId: string = values[index++]
-      //   if (values[index++] === '1' && !driverUniqueId) {
-      //     position.set(Position.KEY_DRIVER_UNIQUE_ID, driverUniqueId)
-      //   }
-      // }
+      if (values.length - index >= 2) {
+        const driverUniqueId: string = values[index++]
+        if (values[index++] === '1' && !driverUniqueId) {
+          position.set(Position.KEY_DRIVER_UNIQUE_ID, driverUniqueId)
+        }
+      }
 
-      // if (this.isIncludeTemp(parseInt(deviceId))) {
-      //   for (let i = 0; i <= 3; i++) {
-      //     const temperature: string = values[index++]
-      //     const value: string = temperature.substring(temperature.indexOf(':') + 1)
-      //     if (!value) {
-      //       position.set(Position.PREFIX_TEMP + i, parseFloat(value))
-      //     }
-      //   }
-      // }
+      if (this.isIncludeTemp(position.getDeviceId())) {
+        for (let i = 0; i <= 3; i++) {
+          const temperature: string = values[index++]
+          if (temperature) {
+            const value: string = temperature.substring(temperature.indexOf(':') + 1)
+            if (!value) {
+              position.set(Position.PREFIX_TEMP + i, parseFloat(value))
+            }
+          }
+        }
+      }
     }
 
     return position
@@ -349,7 +350,7 @@ export { protocol, modelName, compatibleHardware, Adapter }
 
 const adt = new Adapter()
 const data =
-  'ST300STT;511009943;40;319H;20110102;00:07:02;500509;-03.858850;-038.494265;000.000;000.00;0;0;2801;28.39;100000;2;0005;000145;0.0;1\r'
+  'ST300STT;511009943;40;319H;20210126;11:57:09;500509;-03.858878;-038.494803;000.000;184.48;13;1;4027;11.77;000000;1;0488;000246;4.0;1\r'
 
 const buffer = Buffer.from(data, 'utf8')
 
