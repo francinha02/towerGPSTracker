@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 
 import Message from './Message'
+import Network from './Network'
 
 export default class Position extends Message {
   public static KEY_ORIGINAL = 'raw';
@@ -138,11 +139,13 @@ export default class Position extends Message {
   private course: number;
   private address: string;
   private accuracy: number;
-  private network;
+  private network: Network;
 
-  constructor (protocol: string) {
+  constructor (protocol?: string) {
     super()
-    this.protocol = protocol
+    if (protocol) {
+      this.protocol = protocol
+    }
     this.serverTime = DateTime.local().toJSDate()
     console.log(DateTime.local().toJSDate())
   }
@@ -256,11 +259,11 @@ export default class Position extends Message {
     this.accuracy = accuracy
   }
 
-  public getNetwork () {
+  public getNetwork (): Network {
     return this.network
   }
 
-  public setNetwork (network): void {
+  public setNetwork (network: Network): void {
     this.network = network
   }
 

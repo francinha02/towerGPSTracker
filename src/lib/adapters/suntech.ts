@@ -4,6 +4,8 @@
 import Device from '../device'
 import DateFormat from '../helpers/DateFormat'
 import UnitsConverter from '../helpers/UnitsConverter'
+import CellTower from '../models/CellTower'
+import Network from '../models/Network'
 import Position from '../models/Position'
 import { TimeZone } from '../models/Timezone'
 
@@ -130,6 +132,114 @@ class Adapter {
     }
   }
 
+  private decode9 (values: string[]) {
+    let index = 1
+
+    const type = values[index++]
+
+    if (type !== 'Location' && type !== 'Emergency' && type !== 'Alert') {
+      return null
+    }
+
+    const position = new Position()
+    position.setDeviceId(parseInt(values[index++]))
+
+    if (type === ('Emergency') || type === ('Alert')) {
+      position.set(Position.KEY_ALARM, Position.ALARM_GENERAL)
+    }
+
+    if (type !== ('Alert') || this.getProtocolType(position.getDeviceId()) === 0) {
+      position.set(Position.KEY_VERSION_FW, values[index++])
+    }
+    const dateFormat = new DateFormat()
+    dateFormat.setTimeZone('GMT')
+
+    position.setTime(dateFormat.parse(values[index++], values[index++]))
+    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
+
+    if (this.getProtocolType(position.getDeviceId()) === 1) {
+      index += 1 // cell
+    }
+
+    position.setLatitude(parseFloat(values[index++]))
+    position.setLongitude(parseFloat(values[index++]))
+    position.setSpeed(UnitsConverter.knotsFromKph(parseFloat(values[index++])))
+    position.setCourse(parseFloat(values[index++]))
+
+    position.setValid(values[index++] === ('1'))
+
+    if (this.getProtocolType(position.getDeviceId()) === 1) {
+      position.set(Position.KEY_ODOMETER, parseInt(values[index++]))
+    }
+
+    return position
+  }
+
+  private decode4 (values: string[]) {
+    let index = 0
+
+    const type = values[index++].substring(5)
+
+    if (type !== ('STT') && type !== ('ALT')) {
+      return null
+    }
+
+    const position = new Position()
+    position.setDeviceId(parseInt(values[index++]))
+
+    position.set(Position.KEY_TYPE, type)
+
+    position.set(Position.KEY_VERSION_FW, values[index++])
+    index += 1 // model
+
+    const network = new Network()
+
+    for (let i = 0; i < 7; i++) {
+      const cid = parseInt(values[index++])
+      const mcc = parseInt(values[index++])
+      const mnc = parseInt(values[index++])
+      let lac: number, rssi: number
+      if (i === 0) {
+        rssi = parseInt(values[index++])
+        lac = parseInt(values[index++])
+      } else {
+        lac = parseInt(values[index++])
+        rssi = parseInt(values[index++])
+      }
+      index += 1 // timing advance
+      if (cid > 0) {
+        network.addCellTower(CellTower.from(mcc, mnc, lac, cid, rssi))
+      }
+    }
+
+    position.setNetwork(network)
+
+    position.set(Position.KEY_BATTERY, parseFloat(values[index++]))
+    position.set(Position.KEY_ARCHIVE, values[index++] === '0' ? true : null)
+    position.set(Position.KEY_INDEX, parseInt(values[index++]))
+    position.set(Position.KEY_STATUS, parseInt(values[index++]))
+
+    if (values[index].length === 3) {
+      index += 1 // collaborative network
+    }
+
+    const dateFormat = new DateFormat()
+    dateFormat.setTimeZone('GMT')
+    position.setTime(dateFormat.parse(values[index++], values[index++]))
+    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
+
+    position.setLatitude(parseFloat(values[index++]))
+    position.setLongitude(parseFloat(values[index++]))
+    position.setSpeed(UnitsConverter.knotsFromKph(parseFloat(values[index++])))
+    position.setCourse(parseFloat(values[index++]))
+
+    position.set(Position.KEY_SATELLITES, parseInt(values[index++]))
+
+    position.setValid(values[index++] === '1')
+
+    return position
+  }
+
   private decode2356 (protocol: string, values: string[]) {
     let index = 0
     const type: string = values[index++].substring(5)
@@ -166,11 +276,10 @@ class Adapter {
     if (protocol !== 'ST500') {
       const cid: number = parseInt(values[index++])
       if (protocol === 'ST600') {
-        position.setNetwork(cid)
-        index++
-        index++
-        index++
-        index++
+        position.setNetwork(new Network(CellTower.from(
+          parseInt(values[index++]), parseInt(values[index++]),
+          parseInt(values[index++], 16), cid, parseInt(values[index++])
+        )))
       }
     }
 
@@ -218,7 +327,7 @@ class Adapter {
       default:
         break
     }
-    console.log(values.length, index)
+
     if (this.isHbm(type, values.length)) {
       if (index < values.length) {
         position.set(Position.KEY_HOURS, UnitsConverter.msFromMinutes(parseInt(values[index++])))
@@ -266,6 +375,17 @@ class Adapter {
         }
       }
     }
+
+    return position
+  }
+
+  private decodeTravelerReport (values: string[]) {
+    let index = 1
+
+    const position = new Position()
+    position.setDeviceId(parseInt(values[index++]))
+
+    position.set(Position.KEY_DRIVER_UNIQUE_ID, values[values.length - 1])
 
     return position
   }
@@ -327,11 +447,11 @@ class Adapter {
     if (this.prefix.length < 5) {
       console.log('decodeUniversal')
     } else if (this.prefix.endsWith('HTE')) {
-      console.log('decodeTravelReport')
+      console.log(this.decodeTravelerReport(values))
     } else if (this.prefix.startsWith('ST9')) {
-      console.log('decode9')
+      console.log(this.decode9(values))
     } else if (this.prefix.startsWith('ST4')) {
-      console.log('decode4')
+      console.log(this.decode4(values))
     } else {
       console.log(this.decode2356(this.prefix.substring(0, 5), values))
     }
@@ -347,11 +467,3 @@ class Adapter {
 }
 
 export { protocol, modelName, compatibleHardware, Adapter }
-
-const adt = new Adapter()
-const data =
-  'ST300STT;511009943;40;319H;20210126;11:57:09;500509;-03.858878;-038.494803;000.000;184.48;13;1;4027;11.77;000000;1;0488;000246;4.0;1\r'
-
-const buffer = Buffer.from(data, 'utf8')
-
-adt.parseData(buffer)
