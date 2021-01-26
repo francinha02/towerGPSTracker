@@ -1,4 +1,4 @@
-export class UnitsConverter {
+export default class UnitsConverter {
   private static KNOTS_TO_KPH_RATIO = 0.539957;
   private static KNOTS_TO_MPH_RATIO = 0.868976;
   private static KNOTS_TO_MPS_RATIO = 1.94384;

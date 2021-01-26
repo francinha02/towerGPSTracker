@@ -1,6 +1,6 @@
-import { ExtendedModel } from './ExtendedModel'
+import ExtendedModel from './ExtendedModel'
 
-export class Message extends ExtendedModel {
+export default class Message extends ExtendedModel {
   private deviceId: number
   private type: string
 

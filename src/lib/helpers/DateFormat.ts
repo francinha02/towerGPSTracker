@@ -2,7 +2,7 @@ import { DateTime, Settings } from 'luxon'
 
 import { TimeZone } from '../models/Timezone'
 
-export class DateFormat {
+export default class DateFormat {
   private timeZone: string;
 
   constructor () {

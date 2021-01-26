@@ -2,9 +2,9 @@
 // import { Position } from '../models/suntech'
 
 import Device from '../device'
-import { DateFormat } from '../helpers/DateFormat'
-import { UnitsConverter } from '../helpers/UnitsConverter'
-import { Position } from '../models/Position'
+import DateFormat from '../helpers/DateFormat'
+import UnitsConverter from '../helpers/UnitsConverter'
+import Position from '../models/Position'
 import { TimeZone } from '../models/Timezone'
 
 // import * as f from '../functions/functions'

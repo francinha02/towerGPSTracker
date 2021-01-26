@@ -1,4 +1,4 @@
-export class ExtendedModel {
+export default class ExtendedModel {
   private attributes: Map<string, boolean | string | number | any>
 
   constructor () {

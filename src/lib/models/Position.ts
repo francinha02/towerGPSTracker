@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon'
 
-import { Message } from './Message'
+import Message from './Message'
 
-export class Position extends Message {
+export default class Position extends Message {
   public static KEY_ORIGINAL = 'raw';
   public static KEY_INDEX = 'index';
   public static KEY_HDOP = 'hdop';
