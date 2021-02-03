@@ -4,35 +4,16 @@ import { getRepository, Repository } from 'typeorm'
 
 import config from '../config/config'
 import { User } from '../database/entity/User'
-
-interface UserAuth {
-  id: string;
-  name: string;
-  username: string;
-  tm: Date;
-  iat: Date;
-}
+import { UserAuth } from '../models/user'
 
 export default async (req: Request, res: Response, next: NextFunction) => {
   const token =
     req.body.token || req.query.token || req.headers['x-access-token']
 
-  const publicRoutes = <Array<string>>config.publicRouters
-  let isPublicRoute = false
   const _userRepository: Repository<User> = getRepository(User)
 
-  publicRoutes.forEach((url) => {
-    const isPublic = req.url.includes(url)
-    if (isPublic) isPublicRoute = true
-  })
-
-  if (isPublicRoute) next()
-  else if (token) {
+  if (token) {
     try {
-      // PRIVATE and PUBLIC key
-      const _privateKey = config.privateKey
-      const _publicKey = config.publicKey
-
       // SIGNING OPTIONS
       const signOptions: SignOptions = {
         issuer: 'APV Brasil',
@@ -47,7 +28,7 @@ export default async (req: Request, res: Response, next: NextFunction) => {
       }
 
       const _userAuth: UserAuth = Object(
-        verify(token, _publicKey, verifyOptions)
+        verify(token, config.publicKey, verifyOptions)
       )
       req.userAuth = _userAuth
       const _userDB = await _userRepository.findOne({
@@ -55,15 +36,17 @@ export default async (req: Request, res: Response, next: NextFunction) => {
           id: _userAuth.id
         }
       })
-      req.IsRoot = _userDB.isRoot
+      req.role = _userDB.role
 
       const { username, name, tm, id } = _userAuth
       const newToken = sign(
         { username, name, tm, id },
-        _privateKey,
+        config.privateKey,
         signOptions
       )
       res.setHeader('token', newToken)
+
+      // Call the next middleware or controller
       next()
     } catch (errors) {
       res.status(401).send({ message: 'Token informado é invalido' })

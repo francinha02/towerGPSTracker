@@ -17,19 +17,13 @@ export abstract class BaseController<T> extends BaseNotification {
     this._onlyRootController = onlyRoot
   }
 
-  public checkNotPermission (request: Request): boolean {
-    return this._onlyRootController && !request.IsRoot
-  }
-
-  async all (request: Request, selector: any[]) {
-    return this.checkNotPermission(request)
-      ? this.errorRoot
-      : this._repository.find({
-        where: {
-          deleted: false
-        },
-        select: selector
-      })
+  async all (selector: any[]) {
+    return this._repository.find({
+      where: {
+        deleted: false
+      },
+      select: selector
+    })
   }
 
   async one (request: Request, selector: any[]) {
@@ -45,8 +39,7 @@ export abstract class BaseController<T> extends BaseNotification {
     )
   }
 
-  async save (model: any, request: Request, relations?: Array<string>) {
-    if (this.checkNotPermission(request)) return this.errorRoot
+  async save (model: any, relations?: Array<string>) {
     if (model.id) {
       delete model.deleted
       delete model.createAt
@@ -68,7 +61,6 @@ export abstract class BaseController<T> extends BaseNotification {
   }
 
   async remove (request: Request) {
-    if (this.checkNotPermission(request)) return this.errorRoot
     const id = request.params.id
     const model: any = await this._repository.findOne(id)
     if (model) model.deleted = true

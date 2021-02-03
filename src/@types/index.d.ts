@@ -1,4 +1,5 @@
 import Device from '../lib/device'
+import { UserAuth } from '../models/user'
 
 declare module 'net' {
     export interface Socket {
@@ -8,7 +9,7 @@ declare module 'net' {
 
 declare module 'express' {
     export interface Request {
-        IsRoot: boolean,
-        userAuth: string | Record<string>
+        role: string,
+        userAuth: UserAuth
     }
 }

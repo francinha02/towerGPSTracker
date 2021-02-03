@@ -11,8 +11,8 @@ export class UserController extends BaseController<User> {
     super(User)
   }
 
-  async auth (req: Request) {
-    const { username, password } = req.body
+  async auth (request: Request) {
+    const { username, password } = request.body
 
     if (!username || !password) {
       return {
@@ -20,12 +20,12 @@ export class UserController extends BaseController<User> {
         errors: ['Informe o nome de usuário e a senha para efetuar o login']
       }
     }
+
+    // Get user from database
     const user = await this.repository.findOne({ username })
-
+    // Check if encrypted password match
     if (user) {
-      const comparePass = await bcrypt.compare(password, user.password)
-
-      if (!comparePass) {
+      if (!(await UserController.checkUnencryptedPassword(password, user.password))) {
         return {
           status: 404,
           errors: ['Nome de usuário e/ou senha inválidos']
@@ -47,6 +47,7 @@ export class UserController extends BaseController<User> {
         expiresIn: '1h'
       }
 
+      // Sing JWT, valid for 1 hour
       return {
         status: 200,
         message: {
@@ -69,8 +70,35 @@ export class UserController extends BaseController<User> {
     }
   }
 
+  async changePassword (request: Request) {
+    // Get ID from JWT
+    const id = request.userAuth.id
+
+    // Get parameters from the body
+    const { oldPassword, newPassword } = request.body
+    if (!(oldPassword && newPassword)) {
+      return {
+        status: 400,
+        errors: ['Informe a senha antiga e a nova senha para efetuar a mudança']
+      }
+    }
+
+    // Get user from the database
+    const user = await this.repository.findOne({ id })
+
+    if (!UserController.checkUnencryptedPassword(oldPassword, user.password)) {
+      return {
+        status: 401,
+        errors: ['Nome de usuário e/ou senha inválidos']
+      }
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10)
+    return super.save(user)
+  }
+
   async createUser (request: Request) {
-    const { name, username, isRoot, password, confirmPassword } = request.body
+    const { name, username, role, password, confirmPassword } = request.body
     super.isRequired(name, 'Informe o nome')
     super.isRequired(username, 'Informe o nome de usuário')
     super.isRequired(password, 'Informe a senha')
@@ -79,6 +107,7 @@ export class UserController extends BaseController<User> {
     const _user = new User()
     _user.name = name
     _user.username = username
+    _user.role = role
     if (password !== confirmPassword) {
       return {
         status: 400,
@@ -96,20 +125,23 @@ export class UserController extends BaseController<User> {
     }
 
     if (password) _user.password = await bcrypt.hash(password, 10)
-    _user.isRoot = isRoot
 
-    return super.save(_user, request)
+    return super.save(_user)
   }
 
-  async listAll (request: Request) {
-    const selector = ['id', 'name', 'username']
-    const users = await this.all(request, selector)
+  async listAll () {
+    const selector = ['id', 'name', 'username', 'role']
+    const users = await this.all(selector)
     return users
   }
 
   async oneById (request: Request) {
-    const selector = ['id', 'name', 'username']
+    const selector = ['id', 'name', 'username', 'role']
     const user = await this.one(request, selector)
     return user
+  }
+
+  private static async checkUnencryptedPassword (unencryptedPassword: string, password: string): Promise<boolean> {
+    return await bcrypt.compare(unencryptedPassword, password)
   }
 }

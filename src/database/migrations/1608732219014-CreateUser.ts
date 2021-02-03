@@ -40,9 +40,9 @@ export class CreateUser1608732219014 implements MigrationInterface {
           type: 'varchar'
         },
         {
-          name: 'isRoot',
-          type: 'boolean',
-          default: false
+          name: 'role',
+          type: 'varchar',
+          length: '50'
         },
         {
           name: 'password',

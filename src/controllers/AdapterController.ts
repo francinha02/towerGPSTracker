@@ -13,9 +13,9 @@ export class AdapterController extends BaseController<Adapter> {
     super(Adapter)
   }
 
-  async listAll (request: Request) {
+  async listAll () {
     const selector = ['code', 'model', 'equipmentNumber']
-    const users = await this.all(request, selector)
+    const users = await this.all(selector)
     return users
   }
 
@@ -110,6 +110,6 @@ export class AdapterController extends BaseController<Adapter> {
     if (!valuesTimezone.includes(_adapter.timezone)) {
       super.AddNotification('Timezone inválida')
     }
-    return super.save(_adapter, request)
+    return super.save(_adapter)
   }
 }
