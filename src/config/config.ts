@@ -6,5 +6,17 @@ export default {
   host: process.env.HOST || '127.0.0.1',
   publicRouters: process.env.PUBLIC_ROUTER || ['users/create', 'users/auth'],
   publicKey: process.env.PUBLIC_KEY,
-  privateKey: process.env.PRIVATE_KEY
+  privateKey: process.env.PRIVATE_KEY,
+  optionsTCP: [
+    {
+      debug: true,
+      deviceAdapter: 'GT06',
+      port: 2790
+    },
+    {
+      debug: true,
+      deviceAdapter: 'SUNTECH',
+      port: 2791
+    }
+  ]
 }

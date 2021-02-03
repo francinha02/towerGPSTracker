@@ -67,14 +67,16 @@ export class AdapterController extends BaseController<Adapter> {
     super.isRequired(_adapter.phone, 'O telefone é obrigatório')
     super.hasMinLen(_adapter.phone, 13, 'Telefone precisa ter 13 caracteres')
     super.hasMaxLen(_adapter.phone, 13, 'Telefone precisa ter 13 caracteres')
-    _adapter.phone.substring(0, 2) === '55'
-      ? super.isPhone(_adapter.phone.substring(2), 'Telefone inválido')
-      : super.AddNotification('Formato inválido')
-    const phoneValidator = await this.repository.findOne({
-      where: { phone: _adapter.phone }
-    })
-    if (phoneValidator) {
-      super.AddNotification('Número de telefone duplicado')
+    if (_adapter.phone) {
+      _adapter.phone.substring(0, 2) === '55'
+        ? super.isPhone(_adapter.phone.substring(2), 'Telefone inválido')
+        : super.AddNotification('Formato inválido')
+      const phoneValidator = await this.repository.findOne({
+        where: { phone: _adapter.phone }
+      })
+      if (phoneValidator) {
+        super.AddNotification('Número de telefone duplicado')
+      }
     }
 
     // MOBILE OPERATOR VALIDATION
