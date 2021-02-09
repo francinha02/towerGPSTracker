@@ -12,11 +12,6 @@ export class CreateAdminUser1612380018100 implements MigrationInterface {
     user.name = 'Administrator'
     user.password = await bcrypt.hash('@Lab2019', 10)
     user.role = 'ADMIN'
-    user.active = true
-    user.deleted = false
-    user.createAt = new Date()
-    user.updateAt = new Date()
-    user.id = 'dbf8b79c-6656-11eb-ae93-0242ac130002'
 
     const _userRepository = getRepository(User)
     await _userRepository.save(user)

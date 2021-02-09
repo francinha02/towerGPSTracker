@@ -25,7 +25,12 @@ export class UserController extends BaseController<User> {
     const user = await this.repository.findOne({ username })
     // Check if encrypted password match
     if (user) {
-      if (!(await UserController.checkUnencryptedPassword(password, user.password))) {
+      if (
+        !(await UserController.checkUnencryptedPassword(
+          password,
+          user.password
+        ))
+      ) {
         return {
           status: 404,
           errors: ['Nome de usuário e/ou senha inválidos']
@@ -62,11 +67,10 @@ export class UserController extends BaseController<User> {
           )
         }
       }
-    } else {
-      return {
-        status: 404,
-        errors: ['Nome de usuário e/ou senha inválidos']
-      }
+    }
+    return {
+      status: 404,
+      errors: ['Nome de usuário e/ou senha inválidos']
     }
   }
 
@@ -75,26 +79,36 @@ export class UserController extends BaseController<User> {
     const id = request.userAuth.id
 
     // Get parameters from the body
-    const { oldPassword, newPassword } = request.body
-    if (!(oldPassword && newPassword)) {
+    const { oldPassword, newPassword, confirmPassword } = request.body
+    if (!oldPassword || !newPassword || !confirmPassword) {
       return {
         status: 400,
-        errors: ['Informe a senha antiga e a nova senha para efetuar a mudança']
+        errors: [
+          'Informe a senha antiga e a nova senha para efetuar a mudança'
+        ]
       }
     }
 
     // Get user from the database
     const user = await this.repository.findOne({ id })
 
-    if (!UserController.checkUnencryptedPassword(oldPassword, user.password)) {
-      return {
-        status: 401,
-        errors: ['Nome de usuário e/ou senha inválidos']
+    if (user) {
+      if (
+        !UserController.checkUnencryptedPassword(oldPassword, user.password)
+      ) {
+        return {
+          status: 401,
+          errors: ['Nome de usuário e/ou senha inválidos']
+        }
       }
-    }
 
-    user.password = await bcrypt.hash(newPassword, 10)
-    return super.save(user)
+      user.password = await bcrypt.hash(newPassword, 10)
+      return super.save(user)
+    }
+    return {
+      status: 400,
+      errors: ['Usuário não encontrado no banco de dados']
+    }
   }
 
   async createUser (request: Request) {
@@ -141,7 +155,10 @@ export class UserController extends BaseController<User> {
     return user
   }
 
-  private static async checkUnencryptedPassword (unencryptedPassword: string, password: string): Promise<boolean> {
+  private static async checkUnencryptedPassword (
+    unencryptedPassword: string,
+    password: string
+  ): Promise<boolean> {
     return await bcrypt.compare(unencryptedPassword, password)
   }
 }

@@ -1,10 +1,10 @@
 import { EventEmitter } from 'events'
 import fs from 'fs/promises'
-import net, { Socket, createServer } from 'net'
+import { Server as S, Socket, createServer } from 'net'
 import path from 'path'
 
 import Device from './device'
-import { Adapter } from './models/adapter'
+import { AdapterTypes } from './models/adapter'
 import { Options } from './models/server'
 
 export default class Server extends EventEmitter {
@@ -12,10 +12,10 @@ export default class Server extends EventEmitter {
   private callback: { (device: Device, connection: Socket): void }
   private devices: Socket[];
   private device: Device;
-  private server: net.Server;
+  private server: S;
   private debug: boolean;
   private availableAdapters: { GT06?: string; SUNTECH?: string };
-  private deviceAdapter: Adapter;
+  private deviceAdapter: AdapterTypes;
   private defaults: Options =
     {
       debug: false,
@@ -71,8 +71,8 @@ export default class Server extends EventEmitter {
   }
 
   //! SOME FUNCTIONS
-  setAdapter (adapter: Adapter): void {
-    if (typeof adapter !== 'object') {
+  setAdapter (adapter: AdapterTypes): void {
+    if (typeof adapter.Adapter !== 'function') {
       throw new Error(
         'The adapter needs an Adapter() method to start an instance of it'
       )
@@ -80,7 +80,7 @@ export default class Server extends EventEmitter {
     this.deviceAdapter = adapter
   }
 
-  getAdapter (): Adapter {
+  getAdapter (): AdapterTypes {
     return this.deviceAdapter
   }
 
@@ -117,8 +117,8 @@ export default class Server extends EventEmitter {
       const adapterFile = this.availableAdapters[this.opts.deviceAdapter]
 
       import(adapterFile)
-        .then((obj) => {
-          const adapter = new obj.Adapter()
+        .then((adapter) => {
+          // const adapter: Adapter = new adapter.Adapter(this.device)
           this.setAdapter(adapter)
         })
         .catch((err) => console.log(err))

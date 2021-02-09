@@ -1,7 +1,8 @@
-// import crc16 from '../functions/crc16'
-// import { Position } from '../models/suntech'
+import { Socket } from 'net'
 
+import BaseProtocolDecoder from '../controllers/BaseProtocolDecoder'
 import Device from '../device'
+import BitUtil from '../helpers/BitUtil'
 import DateFormat from '../helpers/DateFormat'
 import UnitsConverter from '../helpers/UnitsConverter'
 import CellTower from '../models/CellTower'
@@ -9,76 +10,72 @@ import Network from '../models/Network'
 import Position from '../models/Position'
 import { TimeZone } from '../models/Timezone'
 
-// import * as f from '../functions/functions'
 const compatibleHardware = ['SUNTECH/supplier']
 const modelName = 'SUNTECH'
 const protocol = 'SUNTECH'
 
-class Adapter {
-  private prefix: string;
-  private device: Device;
-  private protocolType: number;
-  private hbm: boolean;
-  private includeAdc: boolean;
-  private includeRpm: boolean;
-  private includeTemp: boolean;
+class Adapter extends BaseProtocolDecoder {
+  private prefix: string
+  private device: Device
+  private protocolType: number
+  private hbm: boolean
+  private includeAdc: boolean
+  private includeRpm: boolean
+  private includeTemp: boolean
 
-  private __count: number;
-  private msgBufferRaw: any[];
-  private msgBuffer: any[];
+  private connection: Socket
 
-  constructor () {
-    this.msgBufferRaw = []
-    this.msgBuffer = []
-    this.__count = 1
+  constructor (device: Device, connection: Socket) {
+    super()
+    this.connection = connection
+    this.device = device
   }
 
-  getPrefix (): string {
+  public getPrefix (): string {
     return this.prefix
   }
 
-  setProtocolType (protocolType: number): void {
+  public setProtocolType (protocolType: number): void {
     this.protocolType = protocolType
   }
 
-  getProtocolType (deviceId: number): number {
+  public getProtocolType (deviceId: number): number {
     // TODO
     return deviceId
   }
 
-  setHbm (hbm: boolean): void {
+  public setHbm (hbm: boolean): void {
     this.hbm = hbm
   }
 
-  isHbm (type: string, length: number): boolean {
+  public isHbm (type: string, length: number): boolean {
     if ((type === 'STT' || type === 'UEX') && length > 18) return true
-    if ((type === 'EMG' || type === 'EVT' || type === 'ALT') && length > 17) return true
-    else return false
+    if ((type === 'EMG' || type === 'EVT' || type === 'ALT') && length > 17) { return true } else return false
   }
 
-  setIncludeAdc (includeAdc: boolean): void {
+  public setIncludeAdc (includeAdc: boolean): void {
     this.includeAdc = includeAdc
   }
 
-  isIncludeAdc (deviceId: number): boolean {
+  public isIncludeAdc (deviceId: number): boolean {
     deviceId ? this.setIncludeAdc(true) : this.setIncludeAdc(false)
     return this.includeAdc
   }
 
-  setIncludeRpm (includeRpm: boolean): void {
+  public setIncludeRpm (includeRpm: boolean): void {
     this.includeRpm = includeRpm
   }
 
-  isIncludeRpm (deviceId: number): boolean {
+  public isIncludeRpm (deviceId: number): boolean {
     deviceId ? this.setIncludeRpm(true) : this.setIncludeRpm(false)
     return this.includeRpm
   }
 
-  setIncludeTemp (includeTemp: boolean): void {
+  public setIncludeTemp (includeTemp: boolean): void {
     this.includeTemp = includeTemp
   }
 
-  isIncludeTemp (deviceId: number): boolean {
+  public isIncludeTemp (deviceId: number): boolean {
     deviceId ? this.setIncludeTemp(true) : this.setIncludeTemp(false)
     return this.includeTemp
   }
@@ -132,7 +129,7 @@ class Adapter {
     }
   }
 
-  private decode9 (values: string[]) {
+  private async decode9 (values: string[]) {
     let index = 1
 
     const type = values[index++]
@@ -141,21 +138,32 @@ class Adapter {
       return null
     }
 
-    const position = new Position()
-    position.setDeviceId(parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
 
-    if (type === ('Emergency') || type === ('Alert')) {
+    if (!deviceSession) {
+      return null
+    }
+
+    const position = new Position()
+    position.setDeviceId(deviceSession.getDeviceId())
+
+    if (type === 'Emergency' || type === 'Alert') {
       position.set(Position.KEY_ALARM, Position.ALARM_GENERAL)
     }
 
-    if (type !== ('Alert') || this.getProtocolType(position.getDeviceId()) === 0) {
+    if (
+      type !== 'Alert' ||
+      this.getProtocolType(position.getDeviceId()) === 0
+    ) {
       position.set(Position.KEY_VERSION_FW, values[index++])
     }
     const dateFormat = new DateFormat()
     dateFormat.setTimeZone('GMT')
 
     position.setTime(dateFormat.parse(values[index++], values[index++]))
-    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
+    position.setFixTime(
+      dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3'])
+    )
 
     if (this.getProtocolType(position.getDeviceId()) === 1) {
       index += 1 // cell
@@ -166,7 +174,7 @@ class Adapter {
     position.setSpeed(UnitsConverter.knotsFromKph(parseFloat(values[index++])))
     position.setCourse(parseFloat(values[index++]))
 
-    position.setValid(values[index++] === ('1'))
+    position.setValid(values[index++] === '1')
 
     if (this.getProtocolType(position.getDeviceId()) === 1) {
       position.set(Position.KEY_ODOMETER, parseInt(values[index++]))
@@ -175,17 +183,23 @@ class Adapter {
     return position
   }
 
-  private decode4 (values: string[]) {
+  private async decode4 (values: string[]) {
     let index = 0
 
     const type = values[index++].substring(5)
 
-    if (type !== ('STT') && type !== ('ALT')) {
+    if (type !== 'STT' && type !== 'ALT') {
+      return null
+    }
+
+    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
+
+    if (!deviceSession) {
       return null
     }
 
     const position = new Position()
-    position.setDeviceId(parseInt(values[index++]))
+    position.setDeviceId(deviceSession.getDeviceId())
 
     position.set(Position.KEY_TYPE, type)
 
@@ -226,7 +240,9 @@ class Adapter {
     const dateFormat = new DateFormat()
     dateFormat.setTimeZone('GMT')
     position.setTime(dateFormat.parse(values[index++], values[index++]))
-    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
+    position.setFixTime(
+      dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3'])
+    )
 
     position.setLatitude(parseFloat(values[index++]))
     position.setLongitude(parseFloat(values[index++]))
@@ -240,22 +256,32 @@ class Adapter {
     return position
   }
 
-  private decode2356 (protocol: string, values: string[]) {
+  private async decode2356 (protocol: string, values: string[]) {
     let index = 0
     const type: string = values[index++].substring(5)
 
     if (
-      (type !== 'STT') &&
-      (type !== 'EMG') &&
-      (type !== 'EVT') &&
-      (type !== 'ALT') &&
-      (type !== 'UEX')
+      type !== 'STT' &&
+      type !== 'EMG' &&
+      type !== 'EVT' &&
+      type !== 'ALT' &&
+      type !== 'UEX'
     ) {
       return null
     }
+    console.log(values[index])
+    console.log(parseInt(values[index]))
+    const deviceSession = await this.getDeviceSession(
+      this.connection,
+      parseInt(values[index++])
+    )
+    if (!deviceSession) {
+      return null
+    }
 
-    const position: Position = new Position(protocol)
-    position.setDeviceId(parseInt(values[index++]))
+    const position: Position = new Position()
+    position.setDeviceId(deviceSession.getDeviceId())
+    console.log(position.getDeviceId())
     position.set(Position.KEY_TYPE, type)
 
     if (
@@ -271,15 +297,24 @@ class Adapter {
     const dateFormat = new DateFormat()
     dateFormat.setTimeZone('GMT')
     position.setTime(dateFormat.parse(values[index++], values[index++]))
-    position.setFixTime(dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3']))
+    position.setFixTime(
+      dateFormat.fixTime(position.getFixTime(), TimeZone['GMT-3'])
+    )
 
     if (protocol !== 'ST500') {
       const cid: number = parseInt(values[index++])
       if (protocol === 'ST600') {
-        position.setNetwork(new Network(CellTower.from(
-          parseInt(values[index++]), parseInt(values[index++]),
-          parseInt(values[index++], 16), cid, parseInt(values[index++])
-        )))
+        position.setNetwork(
+          new Network(
+            CellTower.from(
+              parseInt(values[index++]),
+              parseInt(values[index++]),
+              parseInt(values[index++], 16),
+              cid,
+              parseInt(values[index++])
+            )
+          )
+        )
       }
     }
 
@@ -312,13 +347,19 @@ class Adapter {
         position.set(Position.KEY_INDEX, parseInt(values[index++]))
         break
       case 'EMG':
-        position.set(Position.KEY_ALARM, this.decodeEmergency(parseInt(values[index++])))
+        position.set(
+          Position.KEY_ALARM,
+          this.decodeEmergency(parseInt(values[index++]))
+        )
         break
       case 'EVT':
         position.set(Position.KEY_EVENT, parseInt(values[index++]))
         break
       case 'ALT':
-        position.set(Position.KEY_ALARM, this.decodeAlert(parseInt(values[index++])))
+        position.set(
+          Position.KEY_ALARM,
+          this.decodeAlert(parseInt(values[index++]))
+        )
         break
       case 'UEX':
         this.decodeUex(position, parseInt(values[index++]), values[index++])
@@ -330,7 +371,10 @@ class Adapter {
 
     if (this.isHbm(type, values.length)) {
       if (index < values.length) {
-        position.set(Position.KEY_HOURS, UnitsConverter.msFromMinutes(parseInt(values[index++])))
+        position.set(
+          Position.KEY_HOURS,
+          UnitsConverter.msFromMinutes(parseInt(values[index++]))
+        )
       }
 
       if (index < values.length) {
@@ -367,11 +411,142 @@ class Adapter {
         for (let i = 0; i <= 3; i++) {
           const temperature: string = values[index++]
           if (temperature) {
-            const value: string = temperature.substring(temperature.indexOf(':') + 1)
+            const value: string = temperature.substring(
+              temperature.indexOf(':') + 1
+            )
             if (!value) {
               position.set(Position.PREFIX_TEMP + i, parseFloat(value))
             }
           }
+        }
+      }
+    }
+
+    return position
+  }
+
+  private async decodeUniversal (values: string[]) {
+    let index = 0
+
+    const type = values[index++]
+
+    if (type !== 'STT' && type !== 'ALT') {
+      return null
+    }
+
+    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
+    if (!deviceSession) {
+      return null
+    }
+
+    const position = new Position()
+    position.setDeviceId(deviceSession.getDeviceId())
+    position.set(Position.KEY_TYPE, type)
+
+    const mask = parseInt(values[index++], 16)
+
+    if (BitUtil.check(mask, 1)) {
+      index += 1 // model
+    }
+
+    if (BitUtil.check(mask, 2)) {
+      position.set(Position.KEY_VERSION_FW, values[index++])
+    }
+
+    if (BitUtil.check(mask, 3) && values[index++] === ('0')) {
+      position.set(Position.KEY_ARCHIVE, true)
+    }
+
+    if (BitUtil.check(mask, 4) && BitUtil.check(mask, 5)) {
+      const dateFormat = new DateFormat()
+      dateFormat.setTimeZone('UTC')
+      position.setTime(dateFormat.parse(values[index++], values[index++]))
+    }
+
+    const cellTower = new CellTower()
+    if (BitUtil.check(mask, 6)) {
+      cellTower.setCellId(parseInt(values[index++], 16))
+    }
+    if (BitUtil.check(mask, 7)) {
+      cellTower.setMobileCountryCode(parseInt(values[index++]))
+    }
+    if (BitUtil.check(mask, 8)) {
+      cellTower.setMobileNetworkCode(parseInt(values[index++]))
+    }
+    if (BitUtil.check(mask, 9)) {
+      cellTower.setLocationAreaCode(parseInt(values[index++], 16))
+    }
+    if (cellTower.getCellId() !== null) {
+      position.setNetwork(new Network(cellTower))
+    }
+
+    if (BitUtil.check(mask, 10)) {
+      position.set(Position.KEY_RSSI, parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 11)) {
+      position.setLatitude(parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 12)) {
+      position.setLongitude(parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 13)) {
+      position.setSpeed(UnitsConverter.knotsFromKph(parseInt(values[index++])))
+    }
+
+    if (BitUtil.check(mask, 14)) {
+      position.setCourse(parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 15)) {
+      position.set(Position.KEY_SATELLITES, parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 16)) {
+      position.setValid(values[index++] === ('1'))
+    }
+
+    if (BitUtil.check(mask, 17)) {
+      position.set(Position.KEY_INPUT, parseInt(values[index++]))
+    }
+
+    if (BitUtil.check(mask, 18)) {
+      position.set(Position.KEY_OUTPUT, parseInt(values[index++]))
+    }
+
+    if (type === 'ALT') {
+      if (BitUtil.check(mask, 19)) {
+        position.set('alertId', values[index++])
+      }
+      if (BitUtil.check(mask, 20)) {
+        position.set('alertModifier', values[index++])
+      }
+      if (BitUtil.check(mask, 21)) {
+        position.set('alertData', values[index++])
+      }
+    } else {
+      if (BitUtil.check(mask, 19)) {
+        position.set('mode', parseInt(values[index++]))
+      }
+      if (BitUtil.check(mask, 20)) {
+        position.set('reason', parseInt(values[index++]))
+      }
+      if (BitUtil.check(mask, 21)) {
+        position.set(Position.KEY_INDEX, parseInt(values[index++]))
+      }
+    }
+
+    if (BitUtil.check(mask, 22)) {
+      index += 1 // reserved
+    }
+
+    if (BitUtil.check(mask, 23)) {
+      const assignMask = parseInt(values[index++], 16)
+      for (let i = 0; i <= 30; i++) {
+        if (BitUtil.check(assignMask, i)) {
+          position.set(Position.PREFIX_IO + (i + 1), values[index++])
         }
       }
     }
@@ -417,7 +592,10 @@ class Adapter {
           let fuel: number
           switch (pair[0].charAt(0)) {
             case 't':
-              position.set(Position.PREFIX_TEMP + pair[0].charAt(2), parseInt(value, 16))
+              position.set(
+                Position.PREFIX_TEMP + pair[0].charAt(2),
+                parseInt(value, 16)
+              )
               break
             case 'N':
               fuel = parseInt(value, 16)
@@ -439,30 +617,22 @@ class Adapter {
     }
   }
 
-  parseData (data: Buffer) {
+  async decode (data: Buffer) {
     const values: string[] = data.toString().split(';')
 
     this.prefix = values[0]
 
     if (this.prefix.length < 5) {
-      console.log('decodeUniversal')
+      return await this.decodeUniversal(values)
     } else if (this.prefix.endsWith('HTE')) {
-      console.log(this.decodeTravelerReport(values))
+      return this.decodeTravelerReport(values)
     } else if (this.prefix.startsWith('ST9')) {
-      console.log(this.decode9(values))
+      return await this.decode9(values)
     } else if (this.prefix.startsWith('ST4')) {
-      console.log(this.decode4(values))
+      return await this.decode4(values)
     } else {
-      console.log(this.decode2356(this.prefix.substring(0, 5), values))
+      return await this.decode2356(this.prefix.substring(0, 5), values)
     }
-
-    this.msgBuffer.push(data)
-
-    return this.msgBuffer
-  }
-
-  clearMsgBuffer (): void {
-    this.msgBuffer.length = 0
   }
 }
 
