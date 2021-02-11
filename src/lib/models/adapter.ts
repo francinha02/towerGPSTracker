@@ -5,7 +5,7 @@ import { ParsedMsg } from './gt06'
 import Position from './Position'
 
 export interface Adapter {
-  new (device: Device, connection: Socket)
+  new (connection: Socket)
   decode: { (msg: Buffer): Promise<Position> };
   parseData: { (data: Buffer | any): ParsedMsg[] | any[] };
   clearMsgBuffer: { (): void };

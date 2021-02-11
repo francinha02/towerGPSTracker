@@ -110,6 +110,6 @@ export class AdapterController extends BaseController<Adapter> {
     if (!valuesTimezone.includes(_adapter.timezone)) {
       super.AddNotification('Timezone inválida')
     }
-    return super.save(_adapter)
+    return super.save(_adapter, ['packet'])
   }
 }

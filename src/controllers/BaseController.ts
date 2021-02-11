@@ -26,9 +26,10 @@ export abstract class BaseController<T> extends BaseNotification {
     })
   }
 
-  async one (request: Request, selector: any[]) {
+  async one (request: Request, selector?: any[]) {
     const model = await this._repository.findOne(request.params.id, {
-      select: selector
+      select: selector,
+      loadRelationIds: true
     })
 
     return (

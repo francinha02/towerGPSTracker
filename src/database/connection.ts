@@ -1,6 +1,7 @@
 import { createConnection } from 'typeorm'
 
 import { Adapter } from './entity/Adapter'
+import { Packet } from './entity/Packet'
 import { User } from './entity/User'
 
 const config = require('../../ormconfig.json')
@@ -16,7 +17,7 @@ export default {
       database: config.database,
       synchronize: false,
       logging: false,
-      entities: [User, Adapter]
+      entities: [User, Adapter, Packet]
     })
   }
 }

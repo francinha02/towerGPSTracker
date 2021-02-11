@@ -147,7 +147,6 @@ export default class Position extends Message {
       this.protocol = protocol
     }
     this.serverTime = DateTime.local().toJSDate()
-    console.log(DateTime.local().toJSDate())
   }
 
   public getProtocol (): string {

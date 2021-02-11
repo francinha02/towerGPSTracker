@@ -10,7 +10,7 @@ export class CreateAdminUser1612380018100 implements MigrationInterface {
     const user = new User()
     user.username = 'admin'
     user.name = 'Administrator'
-    user.password = await bcrypt.hash('@Lab2019', 10)
+    user.password = await bcrypt.hash('123456', 10)
     user.role = 'ADMIN'
 
     const _userRepository = getRepository(User)
@@ -18,5 +18,11 @@ export class CreateAdminUser1612380018100 implements MigrationInterface {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  public async down (queryRunner: QueryRunner): Promise<void> {}
+  public async down (queryRunner: QueryRunner): Promise<void> {
+    const _userRepository = getRepository(User)
+    const user = await _userRepository.findOne({
+      where: { username: 'admin' }
+    })
+    await _userRepository.delete(user)
+  }
 }

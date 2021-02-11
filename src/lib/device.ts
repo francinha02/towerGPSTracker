@@ -1,8 +1,11 @@
 import { EventEmitter } from 'events'
 import { AddressInfo, Socket } from 'net'
+import { getRepository } from 'typeorm'
 
+import { Adapter as A } from '../database/entity/Adapter'
+import { Packet } from '../database/entity/Packet'
 import * as f from './functions/functions'
-import { Adapter } from './models/adapter'
+import { Adapter, AdapterTypes } from './models/adapter'
 import { Control, ParseAlarm, ParsedMsg, ParseLocation, ParseStatus } from './models/gt06'
 import Server from './server'
 
@@ -10,18 +13,18 @@ export default class Device extends EventEmitter {
   private connection: Socket;
   private server: Server;
   private adapter: Adapter;
-  uid: number;
-  ip: string;
-  port: number;
+  public uid: number;
+  public ip: string;
+  public port: number;
   private name: string | boolean;
   private logged: boolean;
 
-  constructor (adapter: Adapter, connection: Socket, gpsServer: Server) {
+  constructor (adapter: AdapterTypes, connection: Socket, gpsServer: Server) {
     super()
 
     this.connection = connection
     this.server = gpsServer
-    this.adapter = adapter
+    this.adapter = new adapter.Adapter(connection)
 
     const address = <AddressInfo>connection.address()
     this.ip = address.address
@@ -32,42 +35,74 @@ export default class Device extends EventEmitter {
     /****************************************
     RECEIVING DATA FROM THE DEVICE
     ****************************************/
-    this.on('data', (data) => {
+    this.on('data', async (data: Buffer) => {
       try {
-        const msgParts = this.adapter.parseData(data)
+        // const msgParts = this.adapter.parseData(data)
+        const position = await this.adapter.decode(data)
 
-        msgParts.forEach((msg) => {
-          if (!this.getUID() && typeof msg.deviceID === 'undefined') {
+        if (position) {
+          console.log(position)
+          if (!position.getDeviceId()) {
             this.doLog(
               "The adapter doesn't return the deviceID and is not defined\r\n"
             )
           }
+          const device = <A>position.getAttributes().get('device')
 
-          if (!msgParts) {
-            this.doLog(
-              `The message ('${data}' can't be parsed. Discarding...)\r\n`
-            )
-            return
-          }
+          const _repository = getRepository(Packet)
+          _repository.save({
+            serverTime: position.getServerTime(),
+            fixTime: position.getFixTime(),
+            deviceId: position.getDeviceId(),
+            ignition: position.getAttributes().get('ignition'),
+            gps: position.getAttributes().get('gps') || true,
+            sat: position.getAttributes().get('sat'),
+            valid: position.getValid(),
+            blocked: false,
+            speed: position.getSpeed(),
+            odometer: position.getAttributes().get('odometer'),
+            power: position.getAttributes().get('power'),
+            battery: position.getAttributes().get('battery'),
+            batteryLevel: 100,
+            serial: position.getAttributes().get('index'),
+            latitude: position.getLatitude(),
+            longitude: position.getLongitude(),
+            adapter: device
+          })
+        }
 
-          if (typeof msg.cmd === 'undefined') {
-            this.doLog(
-              "The adapter doesn't return the command (cmd) parameter\r\n"
-            )
-          }
+        // msgParts.forEach((msg: ParsedMsg) => {
+        //   if (!this.getUID() && typeof msg.deviceID === 'undefined') {
+        //     this.doLog(
+        //       "The adapter doesn't return the deviceID and is not defined\r\n"
+        //     )
+        //   }
 
-          // If the UID of the devices it hasn't been configured, do it now.
-          if (!this.getUID()) {
-            this.setUID(msg.deviceID)
-          }
+        //   if (!msgParts) {
+        //     this.doLog(
+        //       `The message ('${data}' can't be parsed. Discarding...)\r\n`
+        //     )
+        //     return
+        //   }
 
-          /************************************
-          EXECUTE ACTION
-          ************************************/
-          this.makeAction(msg.action, msg)
-        })
+        //   if (typeof msg.cmd === 'undefined') {
+        //     this.doLog(
+        //       "The adapter doesn't return the command (cmd) parameter\r\n"
+        //     )
+        //   }
 
-        this.adapter.clearMsgBuffer()
+        //   // If the UID of the devices it hasn't been configured, do it now.
+        //   if (!this.getUID()) {
+        //     this.setUID(msg.deviceID)
+        //   }
+
+        //   /************************************
+        //   EXECUTE ACTION
+        //   ************************************/
+        //   this.makeAction(msg.action, msg)
+        // })
+
+        // this.adapter.clearMsgBuffer()
       } catch (e) {
         console.log(e)
       }
@@ -199,11 +234,11 @@ export default class Device extends EventEmitter {
   }
 
   /* adding methods to the adapter */
-  private getDevice (): typeof Device {
-    return Device
+  public getDevice (): Device {
+    return this
   }
 
-  private send (msg: Buffer | string): void {
+  public send (msg: Buffer | string): void {
     this.emit('Send data', msg)
     const data = f.bufferToHexString(msg)
     this.doLog(`Sending to ${this.getUID()}: ${data}\r\n`)
@@ -219,19 +254,19 @@ export default class Device extends EventEmitter {
   /****************************************
   SOME SETTERS & GETTERS
   ****************************************/
-  private getName (): string | boolean {
+  public getName (): string | boolean {
     return this.name
   }
 
-  private setName (name: string) {
+  public setName (name: string) {
     this.name = name
   }
 
-  private getUID (): number {
+  public getUID (): number {
     return this.uid
   }
 
-  private setUID (uid: number) {
+  public setUID (uid: number) {
     this.uid = uid
   }
 }

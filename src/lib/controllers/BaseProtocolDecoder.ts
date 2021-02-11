@@ -27,12 +27,11 @@ export default abstract class BaseProtocolDecoder {
   public async getDeviceSession (
     chanel: Socket,
     ...uniqueIds: number[]
-  ): Promise<DeviceSession> {
+  ) {
     if (chanel) {
-      const deviceId: number = await this.findDeviceId(...uniqueIds)
-      console.log('DeviceID =>', typeof deviceId)
-      if (deviceId) {
-        return new DeviceSession(deviceId)
+      const device: Adapter = await this.findDevice(...uniqueIds)
+      if (device) {
+        return { deviceSession: new DeviceSession(device.equipmentNumber), device }
       } else {
         return null
       }
@@ -42,8 +41,7 @@ export default abstract class BaseProtocolDecoder {
   /**
    * findDeviceId
    */
-  public async findDeviceId (...uniqueIds: number[]): Promise<number> {
-    console.log(uniqueIds)
+  public async findDevice (...uniqueIds: number[]): Promise<Adapter> {
     if (uniqueIds.length > 0) {
       let device: Adapter = null
 
@@ -53,7 +51,7 @@ export default abstract class BaseProtocolDecoder {
             device = await getRepository(Adapter).findOne({
               where: { equipmentNumber: uniqueId }
             })
-            return Number(device.equipmentNumber)
+            return device
           }
         }
       } catch (e) {

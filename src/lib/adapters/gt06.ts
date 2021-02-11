@@ -1,8 +1,8 @@
 import { Socket } from 'net'
+import { ReverseGeocoder } from 'open-street-map-reverse-geo-node-client'
 
 import BaseProtocolDecoder from '../controllers/BaseProtocolDecoder'
 import DeviceSession from '../controllers/DeviceSession'
-import Device from '../device'
 import crc16 from '../functions/crc16'
 import * as f from '../functions/functions'
 import BitUtil from '../helpers/BitUtil'
@@ -70,17 +70,17 @@ class Adapter extends BaseProtocolDecoder {
   public static MSG_MULTIMEDIA_2 = 0x41
   public static MSG_ALARM = 0x95
   private __count: number
-  private device: Device
   private connection: Socket
   private index: number
   private deviceSession: DeviceSession
+  private geo: ReverseGeocoder
 
-  constructor (device: Device, connection: Socket) {
+  constructor (connection: Socket) {
     super()
     this.connection = connection
-    this.device = device
     this.__count = 1
     this.deviceSession = null
+    this.geo = new ReverseGeocoder()
   }
 
   public command (msg: Buffer, type: boolean): Buffer {
@@ -243,14 +243,11 @@ class Adapter extends BaseProtocolDecoder {
     const type = buf.readUInt8(this.index++)
 
     if (type !== Adapter.MSG_LOGIN) {
+      if (!this.deviceSession) return null
       this.deviceSession = await this.getDeviceSession(
         this.connection,
         this.deviceSession.getDeviceId()
       )
-
-      if (!this.deviceSession) {
-        return null
-      }
     }
     if (type === Adapter.MSG_LOGIN) {
       const imei = parseInt(
@@ -282,6 +279,7 @@ class Adapter extends BaseProtocolDecoder {
     } else if (type === Adapter.MSG_HEARTBEAT) {
       const position = new Position()
       position.setDeviceId(this.deviceSession.getDeviceId())
+      position.set(Position.KEY_TYPE, type)
       const status = buf.readUInt8(this.index++)
 
       position.set(Position.KEY_ARMED, BitUtil.check(status, 0))
@@ -334,19 +332,21 @@ class Adapter extends BaseProtocolDecoder {
     } else if (type === Adapter.MSG_INFO) {
       const position = new Position()
       position.setDeviceId(this.deviceSession.getDeviceId())
+      position.set(Position.KEY_TYPE, type)
 
       position.set(Position.KEY_POWER, buf.readUInt16BE(this.index++) * 0.01)
       this.index++
       return position
     } else {
-      return this.decodeBasicOther(buf, type, dataLength)
+      return await this.decodeBasicOther(buf, type, dataLength)
     }
     return null
   }
 
-  private decodeBasicOther (buf: Buffer, type: number, dataLength: number) {
+  private async decodeBasicOther (buf: Buffer, type: number, dataLength: number) {
     const position = new Position()
     position.setDeviceId(this.deviceSession.getDeviceId())
+    position.set(Position.KEY_TYPE, type.toString(16))
 
     if (
       type === Adapter.MSG_LBS_MULTIPLE ||
@@ -451,12 +451,12 @@ class Adapter extends BaseProtocolDecoder {
       if (type === Adapter.MSG_STATUS && buf.length - this.index === 22) {
         this.decodeHeartbeat(buf, position)
       } else {
-        this.decodeBasicUniversal(buf, type, position)
+        await this.decodeBasicUniversal(buf, type, position)
       }
     } else if (type === Adapter.MSG_ALARM) {
       const extendedAlarm = dataLength > 7
       if (extendedAlarm) {
-        this.decodeGps(position, buf, false, false, false)
+        await this.decodeGps(position, buf, false, false, false)
       } else {
         const dateBuilder = new DateBuilder()
           .setDate(
@@ -510,9 +510,8 @@ class Adapter extends BaseProtocolDecoder {
         type !== Adapter.MSG_COMMAND_1 &&
         type !== Adapter.MSG_COMMAND_2
       ) {
-        console.log('Responde ao pacote')
+        this.sendResponse(false, type, null)
       }
-      console.log('Não sei porque => null')
       return null
     }
 
@@ -526,6 +525,8 @@ class Adapter extends BaseProtocolDecoder {
     ) {
       position.set(Position.KEY_GEOFENCE, buf.readUInt8(this.index++))
     }
+
+    this.sendResponse(false, type, null)
 
     return position
   }
@@ -555,7 +556,7 @@ class Adapter extends BaseProtocolDecoder {
     )
   }
 
-  private decodeGps (
+  private async decodeGps (
     position: Position,
     buf: Buffer,
     hasLength: boolean,
@@ -610,7 +611,8 @@ class Adapter extends BaseProtocolDecoder {
     }
     position.setLatitude(latitude)
     position.setLongitude(longitude)
-
+    const resultGeo = await this.geo.getReverse(`${position.getLatitude()}`, `${position.getLongitude()}`)
+    console.log(resultGeo)
     if (BitUtil.check(flags, 14)) {
       position.set(Position.KEY_IGNITION, BitUtil.check(flags, 15))
     }
@@ -662,9 +664,9 @@ class Adapter extends BaseProtocolDecoder {
     return true
   }
 
-  private decodeBasicUniversal (buf: Buffer, type: number, position: Position) {
+  private async decodeBasicUniversal (buf: Buffer, type: number, position: Position) {
     if (Adapter.hasGps(type)) {
-      this.decodeGps(position, buf, false, true, true)
+      await this.decodeGps(position, buf, false, true, true)
     }
 
     if (Adapter.hasLbs(type)) {

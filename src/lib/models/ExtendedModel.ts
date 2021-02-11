@@ -1,4 +1,5 @@
 export default class ExtendedModel {
+  private id: number
   private attributes: Map<string, boolean | string | number | any>
 
   constructor () {
@@ -20,12 +21,26 @@ export default class ExtendedModel {
   }
 
   /**
+   * getId
+   */
+  public getId (): number {
+    return this.id
+  }
+
+  /**
+   * setId
+   */
+  public setId (id: number) {
+    this.id = id
+  }
+
+  /**
    * set
    */
   public set (key: string, value: any): void {
-    if (value) {
-      this.attributes.set(key, value)
-    }
+    // if (value) {
+    this.attributes.set(key, value)
+    // }
   }
 
   /**

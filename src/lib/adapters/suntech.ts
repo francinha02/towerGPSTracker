@@ -1,7 +1,7 @@
 import { Socket } from 'net'
+import { ReverseGeocoder } from 'open-street-map-reverse-geo-node-client'
 
 import BaseProtocolDecoder from '../controllers/BaseProtocolDecoder'
-import Device from '../device'
 import BitUtil from '../helpers/BitUtil'
 import DateFormat from '../helpers/DateFormat'
 import UnitsConverter from '../helpers/UnitsConverter'
@@ -16,19 +16,19 @@ const protocol = 'SUNTECH'
 
 class Adapter extends BaseProtocolDecoder {
   private prefix: string
-  private device: Device
   private protocolType: number
   private hbm: boolean
   private includeAdc: boolean
   private includeRpm: boolean
   private includeTemp: boolean
+  private geo: ReverseGeocoder
 
   private connection: Socket
 
-  constructor (device: Device, connection: Socket) {
+  constructor (connection: Socket) {
     super()
     this.connection = connection
-    this.device = device
+    this.geo = new ReverseGeocoder()
   }
 
   public getPrefix (): string {
@@ -100,7 +100,7 @@ class Adapter extends BaseProtocolDecoder {
     }
   }
 
-  private decodeAlert (value: number): string {
+  private static decodeAlert (value: number): string {
     switch (value) {
       case 1:
         return Position.ALARM_OVERSPEED
@@ -129,7 +129,7 @@ class Adapter extends BaseProtocolDecoder {
     }
   }
 
-  private async decode9 (values: string[]) {
+  private async decode9 (values: string[], channel: Socket) {
     let index = 1
 
     const type = values[index++]
@@ -138,14 +138,15 @@ class Adapter extends BaseProtocolDecoder {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
 
     if (!deviceSession) {
       return null
     }
 
     const position = new Position()
-    position.setDeviceId(deviceSession.getDeviceId())
+    position.setDeviceId(deviceSession.deviceSession.getDeviceId())
+    position.set('device', deviceSession.device)
 
     if (type === 'Emergency' || type === 'Alert') {
       position.set(Position.KEY_ALARM, Position.ALARM_GENERAL)
@@ -183,7 +184,7 @@ class Adapter extends BaseProtocolDecoder {
     return position
   }
 
-  private async decode4 (values: string[]) {
+  private async decode4 (values: string[], channel: Socket) {
     let index = 0
 
     const type = values[index++].substring(5)
@@ -192,14 +193,15 @@ class Adapter extends BaseProtocolDecoder {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
 
     if (!deviceSession) {
       return null
     }
 
     const position = new Position()
-    position.setDeviceId(deviceSession.getDeviceId())
+    position.setDeviceId(deviceSession.deviceSession.getDeviceId())
+    position.set('device', deviceSession.device)
 
     position.set(Position.KEY_TYPE, type)
 
@@ -212,7 +214,8 @@ class Adapter extends BaseProtocolDecoder {
       const cid = parseInt(values[index++])
       const mcc = parseInt(values[index++])
       const mnc = parseInt(values[index++])
-      let lac: number, rssi: number
+      let lac: number
+      let rssi: number
       if (i === 0) {
         rssi = parseInt(values[index++])
         lac = parseInt(values[index++])
@@ -227,7 +230,6 @@ class Adapter extends BaseProtocolDecoder {
     }
 
     position.setNetwork(network)
-
     position.set(Position.KEY_BATTERY, parseFloat(values[index++]))
     position.set(Position.KEY_ARCHIVE, values[index++] === '0' ? true : null)
     position.set(Position.KEY_INDEX, parseInt(values[index++]))
@@ -256,7 +258,7 @@ class Adapter extends BaseProtocolDecoder {
     return position
   }
 
-  private async decode2356 (protocol: string, values: string[]) {
+  private async decode2356 (protocol: string, values: string[], channel: Socket) {
     let index = 0
     const type: string = values[index++].substring(5)
 
@@ -269,10 +271,8 @@ class Adapter extends BaseProtocolDecoder {
     ) {
       return null
     }
-    console.log(values[index])
-    console.log(parseInt(values[index]))
     const deviceSession = await this.getDeviceSession(
-      this.connection,
+      channel,
       parseInt(values[index++])
     )
     if (!deviceSession) {
@@ -280,8 +280,8 @@ class Adapter extends BaseProtocolDecoder {
     }
 
     const position: Position = new Position()
-    position.setDeviceId(deviceSession.getDeviceId())
-    console.log(position.getDeviceId())
+    position.setDeviceId(deviceSession.deviceSession.getDeviceId())
+    position.set('device', deviceSession.device)
     position.set(Position.KEY_TYPE, type)
 
     if (
@@ -317,9 +317,11 @@ class Adapter extends BaseProtocolDecoder {
         )
       }
     }
-
     position.setLatitude(parseFloat(values[index++]))
     position.setLongitude(parseFloat(values[index++]))
+
+    const resultGeo = await this.geo.getReverse(`${position.getLatitude()}`, `${position.getLongitude()}`)
+    console.log(resultGeo)
     position.setSpeed(parseInt(values[index++]))
     position.setCourse(parseInt(values[index++]))
 
@@ -329,7 +331,6 @@ class Adapter extends BaseProtocolDecoder {
 
     position.set(Position.KEY_ODOMETER, parseInt(values[index++]))
     position.set(Position.KEY_POWER, parseFloat(values[index++]))
-
     const io: string = values[index++]
 
     if (io.length >= 6) {
@@ -358,7 +359,7 @@ class Adapter extends BaseProtocolDecoder {
       case 'ALT':
         position.set(
           Position.KEY_ALARM,
-          this.decodeAlert(parseInt(values[index++]))
+          Adapter.decodeAlert(parseInt(values[index++]))
         )
         break
       case 'UEX':
@@ -425,7 +426,7 @@ class Adapter extends BaseProtocolDecoder {
     return position
   }
 
-  private async decodeUniversal (values: string[]) {
+  private async decodeUniversal (values: string[], channel: Socket) {
     let index = 0
 
     const type = values[index++]
@@ -434,13 +435,14 @@ class Adapter extends BaseProtocolDecoder {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(this.connection, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
     if (!deviceSession) {
       return null
     }
 
     const position = new Position()
-    position.setDeviceId(deviceSession.getDeviceId())
+    position.setDeviceId(deviceSession.deviceSession.getDeviceId())
+    position.set('device', deviceSession.device)
     position.set(Position.KEY_TYPE, type)
 
     const mask = parseInt(values[index++], 16)
@@ -623,15 +625,15 @@ class Adapter extends BaseProtocolDecoder {
     this.prefix = values[0]
 
     if (this.prefix.length < 5) {
-      return await this.decodeUniversal(values)
+      return await this.decodeUniversal(values, this.connection)
     } else if (this.prefix.endsWith('HTE')) {
       return this.decodeTravelerReport(values)
     } else if (this.prefix.startsWith('ST9')) {
-      return await this.decode9(values)
+      return await this.decode9(values, this.connection)
     } else if (this.prefix.startsWith('ST4')) {
-      return await this.decode4(values)
+      return await this.decode4(values, this.connection)
     } else {
-      return await this.decode2356(this.prefix.substring(0, 5), values)
+      return await this.decode2356(this.prefix.substring(0, 5), values, this.connection)
     }
   }
 }
