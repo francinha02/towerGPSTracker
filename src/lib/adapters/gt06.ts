@@ -69,6 +69,7 @@ class Adapter extends BaseProtocolDecoder {
   public static MSG_BMS_2 = 0x40
   public static MSG_MULTIMEDIA_2 = 0x41
   public static MSG_ALARM = 0x95
+
   private __count: number
   private connection: Socket
   private index: number
@@ -244,18 +245,23 @@ class Adapter extends BaseProtocolDecoder {
 
     if (type !== Adapter.MSG_LOGIN) {
       if (!this.deviceSession) return null
-      this.deviceSession = await this.getDeviceSession(
+      const device = await this.getDeviceSession(
         this.connection,
         this.deviceSession.getDeviceId()
       )
+      if (!device) return null
+      this.deviceSession = device.deviceSession
     }
     if (type === Adapter.MSG_LOGIN) {
       const imei = parseInt(
-        buf.slice(this.index++, (this.index = this.index + 7)).toString('hex'), 10
+        buf.slice(this.index++, (this.index = this.index + 7)).toString('hex'),
+        10
       )
 
       // Get the equipment number from the database
-      this.deviceSession = await this.getDeviceSession(this.connection, imei)
+      const device = await this.getDeviceSession(this.connection, imei)
+      if (!device) return null
+      this.deviceSession = device.deviceSession
 
       this.index = this.index + 2
 
@@ -343,7 +349,11 @@ class Adapter extends BaseProtocolDecoder {
     return null
   }
 
-  private async decodeBasicOther (buf: Buffer, type: number, dataLength: number) {
+  private async decodeBasicOther (
+    buf: Buffer,
+    type: number,
+    dataLength: number
+  ) {
     const position = new Position()
     position.setDeviceId(this.deviceSession.getDeviceId())
     position.set(Position.KEY_TYPE, type.toString(16))
@@ -369,7 +379,7 @@ class Adapter extends BaseProtocolDecoder {
           buf.readUInt8(this.index++),
           buf.readUInt8(this.index++)
         )
-      console.log(dateBuilder)
+      position.setTime(dateBuilder.getDate())
 
       const mcc = buf.readUInt16BE(this.index++)
       this.index++
@@ -469,7 +479,7 @@ class Adapter extends BaseProtocolDecoder {
             buf.readUInt8(this.index++),
             buf.readUInt8(this.index++)
           )
-        console.log(dateBuilder)
+        position.setTime(dateBuilder.getDate())
       }
       const alarmType = buf.readUInt8(this.index++)
       switch (alarmType) {
@@ -611,7 +621,10 @@ class Adapter extends BaseProtocolDecoder {
     }
     position.setLatitude(latitude)
     position.setLongitude(longitude)
-    const resultGeo = await this.geo.getReverse(`${position.getLatitude()}`, `${position.getLongitude()}`)
+    const resultGeo = await this.geo.getReverse(
+      `${position.getLatitude()}`,
+      `${position.getLongitude()}`
+    )
     console.log(resultGeo)
     if (BitUtil.check(flags, 14)) {
       position.set(Position.KEY_IGNITION, BitUtil.check(flags, 15))
@@ -664,7 +677,11 @@ class Adapter extends BaseProtocolDecoder {
     return true
   }
 
-  private async decodeBasicUniversal (buf: Buffer, type: number, position: Position) {
+  private async decodeBasicUniversal (
+    buf: Buffer,
+    type: number,
+    position: Position
+  ) {
     if (Adapter.hasGps(type)) {
       await this.decodeGps(position, buf, false, true, true)
     }
@@ -689,6 +706,7 @@ class Adapter extends BaseProtocolDecoder {
     position.set(Position.KEY_STATUS, status)
     position.set(Position.KEY_IGNITION, BitUtil.check(status, 1))
     position.set(Position.KEY_CHARGE, BitUtil.check(status, 2))
+    position.setValid(BitUtil.check(status, 6))
     position.set(Position.KEY_BLOCKED, BitUtil.check(status, 7))
     switch (BitUtil.between(status, 3, 6)) {
       case 1:
@@ -764,8 +782,3 @@ class Adapter extends BaseProtocolDecoder {
 }
 
 export { protocol, modelName, compatibleHardware, Adapter }
-
-// const a = new Adapter()
-// const buf = Buffer.from('78780d010352887071911998000479d00d0a', 'hex')
-// a.decode(buf)
-// console.log(a.parseData(buf))

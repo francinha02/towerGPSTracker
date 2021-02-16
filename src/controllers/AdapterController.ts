@@ -14,14 +14,13 @@ export class AdapterController extends BaseController<Adapter> {
   }
 
   async listAll () {
-    const selector = ['code', 'model', 'equipmentNumber']
+    const selector = ['code', 'model', 'equipmentNumber', 'id']
     const users = await this.all(selector)
     return users
   }
 
   async oneById (request: Request) {
-    const selector = ['code', 'model', 'equipmentNumber']
-    const users = await this.one(request, selector)
+    const users = await this.one(request)
     return users
   }
 

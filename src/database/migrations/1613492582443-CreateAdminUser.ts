@@ -1,11 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-
 import bcrypt from 'bcrypt'
 import { getRepository, MigrationInterface, QueryRunner } from 'typeorm'
 
 import { User } from '../entity/User'
 
-export class CreateAdminUser1612380018100 implements MigrationInterface {
+export class CreateAdminUser1613492582443 implements MigrationInterface {
   public async up (queryRunner: QueryRunner): Promise<void> {
     const user = new User()
     user.username = 'admin'
@@ -17,7 +16,6 @@ export class CreateAdminUser1612380018100 implements MigrationInterface {
     await _userRepository.save(user)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   public async down (queryRunner: QueryRunner): Promise<void> {
     const _userRepository = getRepository(User)
     const user = await _userRepository.findOne({

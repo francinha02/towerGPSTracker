@@ -1,7 +1,10 @@
 import { createConnection } from 'typeorm'
 
 import { Adapter } from './entity/Adapter'
-import { Packet } from './entity/Packet'
+import { Address } from './entity/Address'
+import { Info } from './entity/Info'
+import { Location } from './entity/Location'
+import { Status } from './entity/Status'
 import { User } from './entity/User'
 
 const config = require('../../ormconfig.json')
@@ -17,7 +20,7 @@ export default {
       database: config.database,
       synchronize: false,
       logging: false,
-      entities: [User, Adapter, Packet]
+      entities: [User, Adapter, Location, Status, Address, Info]
     })
   }
 }

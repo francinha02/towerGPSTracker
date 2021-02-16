@@ -59,4 +59,8 @@ export default class UnitsConverter {
   public static msFromMinutes (value: number): number {
     return value * UnitsConverter.MILLISECONDS_TO_MINUTES_RATIO
   }
+
+  public static percentage (max: number, value: number): number {
+    return parseFloat(((value * 100) / max).toFixed(2))
+  }
 }

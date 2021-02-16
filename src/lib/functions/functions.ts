@@ -1,6 +1,6 @@
 import { Parts } from '../models/gt06'
 
-export function strPad (input: string, length: number, string: string): string {
+export const strPad = (input: string, length: number, string: string): string => {
   string = string || '0'
   input = input + ''
   return input.length >= length
@@ -8,7 +8,7 @@ export function strPad (input: string, length: number, string: string): string {
     : new Array(length - input.length + 1).join(string) + input
 }
 
-export function bufferToHexString (buffer: string | Buffer | Parts): string {
+export const bufferToHexString = (buffer: string | Buffer | Parts): string => {
   let str = ''
   for (let i = 0; i < buffer.length; i++) {
     if (buffer[i] < 16) {
@@ -21,8 +21,4 @@ export function bufferToHexString (buffer: string | Buffer | Parts): string {
 
 export function zeroPad (nNum: number, nPad: number): string {
   return ('' + (Math.pow(10, nPad) + nNum)).slice(1)
-}
-
-export function dexToDegrees (dex: string): number {
-  return parseInt(dex, 16) / 1800000
 }

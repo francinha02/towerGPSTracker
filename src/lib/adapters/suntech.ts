@@ -49,8 +49,10 @@ class Adapter extends BaseProtocolDecoder {
   }
 
   public isHbm (type: string, length: number): boolean {
-    if ((type === 'STT' || type === 'UEX') && length > 18) return true
-    if ((type === 'EMG' || type === 'EVT' || type === 'ALT') && length > 17) { return true } else return false
+    if (['STT', 'UEX'].includes(type) && length > 18) return true
+    if (['EMG', 'EVT', 'ALT'].includes(type) && length > 17) {
+      return true
+    } else return false
   }
 
   public setIncludeAdc (includeAdc: boolean): void {
@@ -134,11 +136,14 @@ class Adapter extends BaseProtocolDecoder {
 
     const type = values[index++]
 
-    if (type !== 'Location' && type !== 'Emergency' && type !== 'Alert') {
+    if (!['Location', 'Emergency', 'Alert'].includes(type)) {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(
+      channel,
+      parseInt(values[index++])
+    )
 
     if (!deviceSession) {
       return null
@@ -148,7 +153,7 @@ class Adapter extends BaseProtocolDecoder {
     position.setDeviceId(deviceSession.deviceSession.getDeviceId())
     position.set('device', deviceSession.device)
 
-    if (type === 'Emergency' || type === 'Alert') {
+    if (['Emergency', 'Alert'].includes(type)) {
       position.set(Position.KEY_ALARM, Position.ALARM_GENERAL)
     }
 
@@ -189,11 +194,14 @@ class Adapter extends BaseProtocolDecoder {
 
     const type = values[index++].substring(5)
 
-    if (type !== 'STT' && type !== 'ALT') {
+    if (!['ALT', 'STT'].includes(type)) {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(
+      channel,
+      parseInt(values[index++])
+    )
 
     if (!deviceSession) {
       return null
@@ -230,7 +238,10 @@ class Adapter extends BaseProtocolDecoder {
     }
 
     position.setNetwork(network)
-    position.set(Position.KEY_BATTERY, parseFloat(values[index++]))
+    position.set(
+      Position.KEY_BATTERY,
+      UnitsConverter.percentage(4.2, parseFloat(values[index++]))
+    )
     position.set(Position.KEY_ARCHIVE, values[index++] === '0' ? true : null)
     position.set(Position.KEY_INDEX, parseInt(values[index++]))
     position.set(Position.KEY_STATUS, parseInt(values[index++]))
@@ -258,17 +269,15 @@ class Adapter extends BaseProtocolDecoder {
     return position
   }
 
-  private async decode2356 (protocol: string, values: string[], channel: Socket) {
+  private async decode2356 (
+    protocol: string,
+    values: string[],
+    channel: Socket
+  ) {
     let index = 0
     const type: string = values[index++].substring(5)
 
-    if (
-      type !== 'STT' &&
-      type !== 'EMG' &&
-      type !== 'EVT' &&
-      type !== 'ALT' &&
-      type !== 'UEX'
-    ) {
+    if (!['STT', 'EMG', 'EVT', 'ALT', 'UEX'].includes(type)) {
       return null
     }
     const deviceSession = await this.getDeviceSession(
@@ -283,6 +292,8 @@ class Adapter extends BaseProtocolDecoder {
     position.setDeviceId(deviceSession.deviceSession.getDeviceId())
     position.set('device', deviceSession.device)
     position.set(Position.KEY_TYPE, type)
+    position.set('location', true)
+    position.set('status', true)
 
     if (
       protocol.startsWith('ST3') ||
@@ -316,12 +327,16 @@ class Adapter extends BaseProtocolDecoder {
           )
         )
       }
+      position.set('cellId', cid)
     }
     position.setLatitude(parseFloat(values[index++]))
     position.setLongitude(parseFloat(values[index++]))
 
-    const resultGeo = await this.geo.getReverse(`${position.getLatitude()}`, `${position.getLongitude()}`)
-    console.log(resultGeo)
+    const resultGeo = await this.geo.getReverse(
+      `${position.getLatitude()}`,
+      `${position.getLongitude()}`
+    )
+    position.set('address', resultGeo.address)
     position.setSpeed(parseInt(values[index++]))
     position.setCourse(parseInt(values[index++]))
 
@@ -332,6 +347,7 @@ class Adapter extends BaseProtocolDecoder {
     position.set(Position.KEY_ODOMETER, parseInt(values[index++]))
     position.set(Position.KEY_POWER, parseFloat(values[index++]))
     const io: string = values[index++]
+    position.set('io', io)
 
     if (io.length >= 6) {
       position.set(Position.KEY_IGNITION, io.charAt(0) === '1')
@@ -379,7 +395,10 @@ class Adapter extends BaseProtocolDecoder {
       }
 
       if (index < values.length) {
-        position.set(Position.KEY_BATTERY, parseFloat(values[index++]))
+        position.set(
+          Position.KEY_BATTERY,
+          UnitsConverter.percentage(4.2, parseFloat(values[index++]))
+        )
       }
 
       if (index < values.length && values[index++] === '0') {
@@ -431,11 +450,14 @@ class Adapter extends BaseProtocolDecoder {
 
     const type = values[index++]
 
-    if (type !== 'STT' && type !== 'ALT') {
+    if (!['STT', 'ALT'].includes(type)) {
       return null
     }
 
-    const deviceSession = await this.getDeviceSession(channel, parseInt(values[index++]))
+    const deviceSession = await this.getDeviceSession(
+      channel,
+      parseInt(values[index++])
+    )
     if (!deviceSession) {
       return null
     }
@@ -455,7 +477,7 @@ class Adapter extends BaseProtocolDecoder {
       position.set(Position.KEY_VERSION_FW, values[index++])
     }
 
-    if (BitUtil.check(mask, 3) && values[index++] === ('0')) {
+    if (BitUtil.check(mask, 3) && values[index++] === '0') {
       position.set(Position.KEY_ARCHIVE, true)
     }
 
@@ -507,7 +529,7 @@ class Adapter extends BaseProtocolDecoder {
     }
 
     if (BitUtil.check(mask, 16)) {
-      position.setValid(values[index++] === ('1'))
+      position.setValid(values[index++] === '1')
     }
 
     if (BitUtil.check(mask, 17)) {
@@ -633,7 +655,11 @@ class Adapter extends BaseProtocolDecoder {
     } else if (this.prefix.startsWith('ST4')) {
       return await this.decode4(values, this.connection)
     } else {
-      return await this.decode2356(this.prefix.substring(0, 5), values, this.connection)
+      return await this.decode2356(
+        this.prefix.substring(0, 5),
+        values,
+        this.connection
+      )
     }
   }
 }

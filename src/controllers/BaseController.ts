@@ -17,7 +17,7 @@ export abstract class BaseController<T> extends BaseNotification {
     this._onlyRootController = onlyRoot
   }
 
-  async all (selector: any[]) {
+  async all (selector?: any[]) {
     return this._repository.find({
       where: {
         deleted: false

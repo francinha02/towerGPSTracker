@@ -3,7 +3,10 @@ import { AddressInfo, Socket } from 'net'
 import { getRepository } from 'typeorm'
 
 import { Adapter as A } from '../database/entity/Adapter'
-import { Packet } from '../database/entity/Packet'
+import { Address } from '../database/entity/Address'
+import { Info } from '../database/entity/Info'
+import { Location } from '../database/entity/Location'
+import { Status } from '../database/entity/Status'
 import * as f from './functions/functions'
 import { Adapter, AdapterTypes } from './models/adapter'
 import { Control, ParseAlarm, ParsedMsg, ParseLocation, ParseStatus } from './models/gt06'
@@ -41,34 +44,62 @@ export default class Device extends EventEmitter {
         const position = await this.adapter.decode(data)
 
         if (position) {
-          console.log(position)
           if (!position.getDeviceId()) {
             this.doLog(
               "The adapter doesn't return the deviceID and is not defined\r\n"
             )
           }
           const device = <A>position.getAttributes().get('device')
+          const attributes = position.getAttributes()
 
-          const _repository = getRepository(Packet)
-          _repository.save({
-            serverTime: position.getServerTime(),
-            fixTime: position.getFixTime(),
-            deviceId: position.getDeviceId(),
-            ignition: position.getAttributes().get('ignition'),
-            gps: position.getAttributes().get('gps') || true,
-            sat: position.getAttributes().get('sat'),
-            valid: position.getValid(),
-            blocked: false,
-            speed: position.getSpeed(),
-            odometer: position.getAttributes().get('odometer'),
-            power: position.getAttributes().get('power'),
-            battery: position.getAttributes().get('battery'),
-            batteryLevel: 100,
-            serial: position.getAttributes().get('index'),
-            latitude: position.getLatitude(),
-            longitude: position.getLongitude(),
-            adapter: device
-          })
+          if (attributes.get('location')) {
+            const address = attributes.get('address')
+            const _repoAddress = await getRepository(Address).save({
+              road: address.road,
+              suburb: address.suburb,
+              city: address.city,
+              state: address.state,
+              region: address.region,
+              postcode: address.postcode,
+              country: address.country
+            })
+
+            const _repository = getRepository(Location)
+
+            await _repository.save({
+              serverTime: position.getServerTime(),
+              fixTime: position.getFixTime(),
+              satellite: attributes.get('sat'),
+              latitude: position.getLatitude(),
+              longitude: position.getLongitude(),
+              speed: position.getSpeed(),
+              course: position.getCourse().toString(),
+              cellId: attributes.get('cellId'),
+              adapter: device,
+              address: _repoAddress
+            })
+          }
+          if (attributes.get('status')) {
+            const _repoInfo = await getRepository(Info).save({
+              odometer: attributes.get('odometer'),
+              power: attributes.get('power'),
+              serial: attributes.get('index'),
+              mode: attributes.get('status'),
+              io: attributes.get('io'),
+              hourMeter: attributes.get('hours'),
+              archive: attributes.get('archive')
+            })
+
+            await getRepository(Status).save({
+              blocked: false,
+              valid: position.getValid(),
+              charge: true,
+              ignition: attributes.get('ignition'),
+              battery: attributes.get('battery'),
+              adapter: device,
+              info: _repoInfo
+            })
+          }
         }
 
         // msgParts.forEach((msg: ParsedMsg) => {

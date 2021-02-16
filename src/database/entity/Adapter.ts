@@ -2,7 +2,8 @@ import { Entity, Column, OneToMany } from 'typeorm'
 
 import { BaseEntity } from './BaseEntity'
 import { MobileOperator, ModelType, TimeZone } from './enum/AdapterTypes'
-import { Packet } from './Packet'
+import { Location } from './Location'
+import { Status } from './Status'
 
 @Entity()
 export class Adapter extends BaseEntity {
@@ -30,10 +31,17 @@ export class Adapter extends BaseEntity {
   @Column({ type: 'enum', enum: TimeZone })
   timezone: TimeZone
 
-  @OneToMany(() => Packet, (packet: Packet) => packet.adapter, {
+  @OneToMany(() => Location, (location: Location) => location.adapter, {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
     eager: true
   })
-  packetId: Packet[]
+  location: Location[]
+
+  @OneToMany(() => Status, (status: Status) => status.adapter, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    eager: true
+  })
+  statusId: Status[]
 }
